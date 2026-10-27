@@ -4897,4 +4897,8 @@
   <data name="PropertyGroupVolume" xml:space="preserve">
     <value>Volume</value>
   </data>
+  <data name="Unspecified" xml:space="preserve">
+    <value>Unspecified</value>
+    <comment>Name of the group for items that have no value when grouping by a property, such as music files without an artist.</comment>
+  </data>
 </root>

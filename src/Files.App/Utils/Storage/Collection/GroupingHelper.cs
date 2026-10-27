@@ -9,7 +9,7 @@ namespace Files.App.Utils.Storage
 	{
 		private static readonly IDateTimeFormatter dateTimeFormatter = Ioc.Default.GetRequiredService<IDateTimeFormatter>();
 
-		public static Func<ListedItem, string?>? GetItemGroupKeySelector(GroupOption option, GroupByDateUnit unit)
+		public static Func<ListedItem, string?>? GetItemGroupKeySelector(GroupOption option, GroupByDateUnit unit, string? propertyId = null)
 		{
 			return option switch
 			{
@@ -25,11 +25,12 @@ namespace Files.App.Utils.Storage
 				GroupOption.OriginalFolder => x => (x as RecycleBinItem)?.ItemOriginalFolder,
 				GroupOption.DateDeleted => x => dateTimeFormatter.ToTimeSpanLabel((x as RecycleBinItem)?.ItemDateDeletedReal ?? DateTimeOffset.Now, unit).Text,
 				GroupOption.FolderPath => x => PathNormalization.GetParentDir(x.GetRequiredPath().TrimPath()),
+				GroupOption.Property when !string.IsNullOrEmpty(propertyId) => x => GetPropertyGroupKey(x, propertyId, unit),
 				_ => null,
 			};
 		}
 
-		public static (Action<GroupedCollection<ListedItem>>?, Action<GroupedCollection<ListedItem>>?) GetGroupInfoSelector(GroupOption option, GroupByDateUnit unit)
+		public static (Action<GroupedCollection<ListedItem>>?, Action<GroupedCollection<ListedItem>>?) GetGroupInfoSelector(GroupOption option, GroupByDateUnit unit, string? propertyId = null)
 		{
 			return option switch
 			{
@@ -125,8 +126,36 @@ namespace Files.App.Utils.Storage
 					model.Text = GetFolderName(parentPath);
 					model.Subtext = parentPath;
 				}, null),
+				GroupOption.Property when !string.IsNullOrEmpty(propertyId) => (x =>
+				{
+					var model = x.Model;
+					model.ShowCountTextBelow = true;
+					if (ColumnValueHelper.GetValue(x.First(), propertyId) is DateTimeOffset date)
+					{
+						var vals = dateTimeFormatter.ToTimeSpanLabel(date, unit);
+						model.Subtext = vals.Text;
+						model.Icon = vals.Glyph;
+						model.SortIndexOverride = vals.Index;
+					}
+					else
+					{
+						model.Text = GetPropertyGroupKey(x.First(), propertyId, unit);
+					}
+				}, null),
 				_ => (null, null)
 			};
+		}
+
+		private static string GetPropertyGroupKey(ListedItem item, string propertyId, GroupByDateUnit unit)
+		{
+			var value = ColumnValueHelper.GetValue(item, propertyId);
+			if (ColumnValueHelper.IsEmpty(value))
+				return Strings.Unspecified.GetLocalizedResource();
+
+			if (value is DateTimeOffset date)
+				return dateTimeFormatter.ToTimeSpanLabel(date, unit).Text;
+
+			return ColumnValueHelper.GetText(item, propertyId) is { Length: > 0 } text ? text : value!.ToString() ?? string.Empty;
 		}
 
 		public static (string key, string text, string range, int index) GetGroupSizeInfo(long size)
