@@ -648,6 +648,55 @@ namespace Files.App.UserControls
 				DispatcherQueue.TryEnqueue(() => button.IsChecked = ViewModel?.IsLayoutTemplateApplied is false);
 		}
 
+		private void SortMenu_Opening(object sender, object e)
+		{
+			if (ViewModel?.InstanceViewModel?.FolderSettings is not { } folderSettings)
+				return;
+
+			var shellViewModel = PageContext.ShellPage?.ShellViewModel;
+			SetOptionMenuItems(
+				SortByMenu,
+				LayoutSortGroupOptions.GetSortOptions(folderSettings, shellViewModel),
+				id => LayoutSortGroupOptions.SortBy(folderSettings, id));
+			SetOptionMenuItems(
+				GroupByMenu,
+				LayoutSortGroupOptions.GetGroupOptions(folderSettings, shellViewModel),
+				id => LayoutSortGroupOptions.GroupBy(folderSettings, id));
+		}
+
+		private static void SetOptionMenuItems(MenuFlyoutSubItem menu, IReadOnlyList<LayoutSortGroupOption> options, Action<string> selectColumn)
+		{
+			for (var index = menu.Items.IndexOf(menu.Items.OfType<MenuFlyoutSeparator>().First()) - 1; index >= 0; index--)
+				menu.Items.RemoveAt(index);
+
+			for (var index = 0; index < options.Count; index++)
+				menu.Items.Insert(index, CreateOptionMenuItem(options[index], selectColumn));
+		}
+
+		private static MenuFlyoutItemBase CreateOptionMenuItem(LayoutSortGroupOption option, Action<string> selectColumn)
+		{
+			if (option.Items is { } items)
+			{
+				var subItem = new MenuFlyoutSubItem() { Text = option.Label };
+				foreach (var item in items)
+					subItem.Items.Add(CreateOptionMenuItem(item, selectColumn));
+
+				return subItem;
+			}
+
+			var toggleItem = new ToggleMenuFlyoutItem() { Text = option.Label, IsChecked = option.IsChecked };
+			toggleItem.Click += async (_, _) =>
+			{
+				if (option.BuiltInCommand is { } command)
+					await command.ExecuteAsync();
+				else if (option.PropertyId is { } id)
+					selectColumn(id);
+			};
+
+			return toggleItem;
+		}
+
+		[DynamicWindowsRuntimeCast(typeof(ComboBox))]
 		private void LayoutTemplates_DropDownOpened(object sender, object e)
 			=> templateBeforeDropDown = (sender as ComboBox)?.SelectedItem;
 

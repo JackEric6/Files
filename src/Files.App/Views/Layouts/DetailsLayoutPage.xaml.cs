@@ -1337,7 +1337,10 @@ namespace Files.App.Views.Layouts
 				ColumnsViewModel.GetColumn(id) is { IsHidden: false } column &&
 				(DetailsLayoutColumnDefinitions.IsBuiltIn(id) || !column.UserCollapsed));
 
-			foreach (var id in columnIds)
+			var locationColumnIds = LayoutSortGroupOptions.GetExplorerColumnIds(ParentShellPageInstance?.ShellViewModel)
+				.Where(id => !DetailsLayoutColumnDefinitions.IsBuiltIn(id) && ColumnValueHelper.IsShellPropertyColumn(id));
+
+			foreach (var id in columnIds.Concat(locationColumnIds).Distinct())
 			{
 				var item = new ToggleMenuFlyoutItem
 				{
@@ -1352,10 +1355,24 @@ namespace Files.App.Views.Layouts
 
 		private async void MoreColumns_Click(object sender, RoutedEventArgs e)
 		{
+			await CustomizeColumnsAsync();
+		}
+
+		/// <summary>
+		/// Opens the window that chooses the shown columns.
+		/// </summary>
+		public async Task CustomizeColumnsAsync()
+		{
 			var catalog = _shellPropertyCatalog ?? await ShellPropertyCatalog.GetAsync();
+			var folderColumns = await ShellFolderColumns.GetAsync(ParentShellPageInstance.GetRequiredShellViewModel().WorkingDirectory);
+			var propertyColumns = folderColumns.Count > 0
+				? folderColumns.Select(column => column.Id).Where(catalog.ContainsKey).Concat(ColumnsViewModel.OrderedColumns.Ids.Where(ColumnsViewModel.IsColumnVisible))
+				: catalog.Keys;
+
 			var availableColumns = DetailsLayoutColumnIds.BuiltIn
 				.Where(id => !DetailsLayoutColumnOrder.IsFixed(id) && !ColumnsViewModel.GetColumn(id).IsHidden)
-				.Concat(catalog.Keys.Where(id => !DetailsLayoutColumnDefinitions.IsBuiltIn(id)))
+				.Concat(propertyColumns.Where(id => !DetailsLayoutColumnDefinitions.IsBuiltIn(id)))
+				.Distinct()
 				.ToArray();
 
 			var shownColumns = ColumnsViewModel.OrderedColumns.Ids.Where(id => ColumnsViewModel.IsColumnVisible(id) && !ColumnsViewModel.GetColumn(id).IsHidden);

@@ -4833,6 +4833,9 @@
   <data name="CustomizeColumns" xml:space="preserve">
     <value>Customize columns</value>
   </data>
+  <data name="CustomizeColumnsDescription" xml:space="preserve">
+    <value>Choose the columns shown in the Details layout</value>
+  </data>
   <data name="OtherColumns" xml:space="preserve">
     <value>Other</value>
     <comment>Name of a group of columns in the window for choosing Details layout columns, with columns that fit no other group.</comment>
