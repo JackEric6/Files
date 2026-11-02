@@ -1333,7 +1333,7 @@ namespace Files.App.Views.Layouts
 
 			// Lists the columns that apply to this folder in display order, like the column menu of File Explorer.
 			var columnIds = ColumnsViewModel.OrderedColumns.Ids.Where(id =>
-				!DetailsLayoutColumnOrder.IsFixed(id) &&
+				!DetailsLayoutColumnOrder.IsRequired(id) &&
 				ColumnsViewModel.GetColumn(id) is { IsHidden: false } column &&
 				(DetailsLayoutColumnDefinitions.IsBuiltIn(id) || !column.UserCollapsed));
 
@@ -1370,7 +1370,7 @@ namespace Files.App.Views.Layouts
 				: catalog.Keys;
 
 			var availableColumns = DetailsLayoutColumnIds.BuiltIn
-				.Where(id => !DetailsLayoutColumnOrder.IsFixed(id) && !ColumnsViewModel.GetColumn(id).IsHidden)
+				.Where(id => !DetailsLayoutColumnOrder.IsRequired(id) && !ColumnsViewModel.GetColumn(id).IsHidden)
 				.Concat(propertyColumns.Where(id => !DetailsLayoutColumnDefinitions.IsBuiltIn(id)))
 				.Distinct()
 				.ToArray();
@@ -1386,7 +1386,7 @@ namespace Files.App.Views.Layouts
 					return;
 
 				SetColumnsVisibility(availableColumns.Select(id => (id, columns.Contains(id))));
-				ColumnsViewModel.ColumnOrder = [.. columns, .. ColumnsViewModel.OrderedColumns.Ids.Where(id => !columns.Contains(id) && !DetailsLayoutColumnOrder.IsFixed(id))];
+				ColumnsViewModel.ColumnOrder = [.. columns, .. ColumnsViewModel.OrderedColumns.Ids.Where(id => !columns.Contains(id) && !DetailsLayoutColumnOrder.IsPinned(id))];
 				SaveColumnLayout();
 			};
 
@@ -1441,7 +1441,7 @@ namespace Files.App.Views.Layouts
 
 			foreach (var id in ColumnsViewModel.OrderedColumns.Ids)
 			{
-				if (!DetailsLayoutColumnOrder.IsFixed(id) && _headerColumnIndices.TryGetValue(id, out var index) && ColumnsViewModel.GetColumn(id).Visibility == Visibility.Visible)
+				if (!DetailsLayoutColumnOrder.IsPinned(id) && _headerColumnIndices.TryGetValue(id, out var index) && ColumnsViewModel.GetColumn(id).Visibility == Visibility.Visible)
 					bounds.Add((id, offsets[index], offsets[index + 2]));
 			}
 
