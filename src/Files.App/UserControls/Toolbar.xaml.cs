@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using CommunityToolkit.WinUI;
+using Files.App.Helpers.ContextFlyouts;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -654,46 +655,18 @@ namespace Files.App.UserControls
 				return;
 
 			var shellViewModel = PageContext.ShellPage?.ShellViewModel;
-			SetOptionMenuItems(
-				SortByMenu,
-				LayoutSortGroupOptions.GetSortOptions(folderSettings, shellViewModel),
-				id => LayoutSortGroupOptions.SortBy(folderSettings, id));
-			SetOptionMenuItems(
-				GroupByMenu,
-				LayoutSortGroupOptions.GetGroupOptions(folderSettings, shellViewModel),
-				id => LayoutSortGroupOptions.GroupBy(folderSettings, id));
+			SetOptionMenuItems(SortByMenu, ContentPageContextFlyoutFactory.GetSortMenuItems(folderSettings, shellViewModel));
+			SetOptionMenuItems(GroupByMenu, ContentPageContextFlyoutFactory.GetGroupMenuItems(folderSettings, shellViewModel));
 		}
 
-		private static void SetOptionMenuItems(MenuFlyoutSubItem menu, IReadOnlyList<LayoutSortGroupOption> options, Action<string> selectColumn)
+		private static void SetOptionMenuItems(MenuFlyoutSubItem menu, List<ContextMenuFlyoutItemViewModel> items)
 		{
 			for (var index = menu.Items.IndexOf(menu.Items.OfType<MenuFlyoutSeparator>().First()) - 1; index >= 0; index--)
 				menu.Items.RemoveAt(index);
 
-			for (var index = 0; index < options.Count; index++)
-				menu.Items.Insert(index, CreateOptionMenuItem(options[index], selectColumn));
-		}
-
-		private static MenuFlyoutItemBase CreateOptionMenuItem(LayoutSortGroupOption option, Action<string> selectColumn)
-		{
-			if (option.Items is { } items)
-			{
-				var subItem = new MenuFlyoutSubItem() { Text = option.Label };
-				foreach (var item in items)
-					subItem.Items.Add(CreateOptionMenuItem(item, selectColumn));
-
-				return subItem;
-			}
-
-			var toggleItem = new ToggleMenuFlyoutItem() { Text = option.Label, IsChecked = option.IsChecked };
-			toggleItem.Click += async (_, _) =>
-			{
-				if (option.BuiltInCommand is { } command)
-					await command.ExecuteAsync();
-				else if (option.PropertyId is { } id)
-					selectColumn(id);
-			};
-
-			return toggleItem;
+			var elements = ContextFlyoutModelToElementHelper.GetMenuFlyoutItemsFromModel(items) ?? [];
+			for (var index = 0; index < elements.Count; index++)
+				menu.Items.Insert(index, elements[index]);
 		}
 
 		[DynamicWindowsRuntimeCast(typeof(ComboBox))]
@@ -717,18 +690,12 @@ namespace Files.App.UserControls
 		private void RestoreDefaultView_PointerEntered(object sender, PointerRoutedEventArgs e)
 			=> MoreViewOptionsMenu.Hide();
 
-		private bool IsLayoutToggled(bool isLayout, bool isTemplateApplied)
-			=> isLayout && !isTemplateApplied;
-
-		private bool IsTemplateLayout(bool isLayout, bool isTemplateApplied)
-			=> isLayout && isTemplateApplied;
-
-		private ThemedIconColorType GetLayoutIconColor(bool isLayout, bool isTemplateApplied)
-			=> IsTemplateLayout(isLayout, isTemplateApplied) ? ThemedIconColorType.Accent : ThemedIconColorType.Normal;
+		private ThemedIconColorType GetLayoutIconColor(bool isFromTemplate)
+			=> isFromTemplate ? ThemedIconColorType.Accent : ThemedIconColorType.Normal;
 
 		[DynamicWindowsRuntimeCast(typeof(Style))]
-		private Style? GetLayoutLabelStyle(bool isLayout, bool isTemplateApplied)
-			=> IsTemplateLayout(isLayout, isTemplateApplied) ? (Style)Resources["Local.TemplateLayoutLabelStyle"] : null;
+		private Style? GetLayoutLabelStyle(bool isFromTemplate)
+			=> isFromTemplate ? (Style)Resources["Local.TemplateLayoutLabelStyle"] : null;
 
 		private void CustomizeToolbar_Click(object sender, RoutedEventArgs e)
 			=> Commands.CustomizeToolbar.Execute(null);

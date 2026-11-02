@@ -35,7 +35,10 @@ namespace Files.App.ViewModels.Settings
 		/// Gets whether folders that mostly contain certain file types use this template.
 		/// </summary>
 		public bool IsUsedForFileTypes
-			=> _fileTypesRule is not null;
+		{
+			get => _fileTypesRule is not null;
+			set => SetUsedForFileTypes(value);
+		}
 
 		/// <summary>
 		/// Gets whether the template can be used for file types but isn't yet.
@@ -190,6 +193,22 @@ namespace Files.App.ViewModels.Settings
 
 		public ICommand EditFileTypesCommand { get; }
 
+		public ICommand RenameCommand { get; }
+
+		public ICommand DeleteCommand { get; }
+
+		public ICommand ManageColumnsCommand { get; }
+
+		/// <summary>
+		/// Occurs when the template was deleted.
+		/// </summary>
+		public event EventHandler? Deleted;
+
+		/// <summary>
+		/// Occurs when the user asks to choose the columns of the template.
+		/// </summary>
+		public event EventHandler<ColumnCustomizationViewModel>? ManageColumnsRequested;
+
 		public LayoutTemplateEditorViewModel(ILayoutTemplatesService templatesService, LayoutTemplate template)
 		{
 			_templatesService = templatesService;
@@ -199,6 +218,9 @@ namespace Files.App.ViewModels.Settings
 
 			RestoreDefaultsCommand = new RelayCommand(RestoreDefaults);
 			EditFileTypesCommand = new AsyncRelayCommand(EditFileTypesAsync);
+			RenameCommand = new AsyncRelayCommand(RenameAsync);
+			DeleteCommand = new AsyncRelayCommand(DeleteAsync);
+			ManageColumnsCommand = new RelayCommand(ManageColumns);
 		}
 
 		/// <summary>
@@ -223,10 +245,26 @@ namespace Files.App.ViewModels.Settings
 			_templatesService.SaveRules(_templatesService.Rules.Where(rule => rule.TemplateId != id).Concat(conditions).ToArray());
 		}
 
-		public void Delete()
+		private async Task RenameAsync()
 		{
+			if (await LayoutTemplateDialogs.AskNameAsync(Strings.RenameTemplate.GetLocalizedResource(), Strings.Rename.GetLocalizedResource(), DisplayName) is { } name)
+				Name = name;
+		}
+
+		private async Task DeleteAsync()
+		{
+			if (!await LayoutTemplateDialogs.ConfirmDeleteAsync(DisplayName))
+				return;
+
 			_isDeleted = true;
 			_templatesService.DeleteTemplate(_template.Id);
+			Deleted?.Invoke(this, EventArgs.Empty);
+		}
+
+		private void ManageColumns()
+		{
+			if (CreateColumnsViewModel() is { } columns)
+				ManageColumnsRequested?.Invoke(this, columns);
 		}
 
 		private void Update<T>(T currentValue, T value, Action update)
@@ -239,10 +277,7 @@ namespace Files.App.ViewModels.Settings
 			Save();
 		}
 
-		/// <summary>
-		/// Turns using the template for certain file types on or off.
-		/// </summary>
-		public void SetUsedForFileTypes(bool value)
+		private void SetUsedForFileTypes(bool value)
 		{
 			if (value == IsUsedForFileTypes)
 				return;
@@ -381,7 +416,7 @@ namespace Files.App.ViewModels.Settings
 		/// <summary>
 		/// Creates an editor for the columns of the template, once <see cref="LoadAsync"/> loaded the available columns.
 		/// </summary>
-		public ColumnCustomizationViewModel? CreateColumnsViewModel()
+		private ColumnCustomizationViewModel? CreateColumnsViewModel()
 		{
 			if (_catalog is not { } catalog)
 				return null;

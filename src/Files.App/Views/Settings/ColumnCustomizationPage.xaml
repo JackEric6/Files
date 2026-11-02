@@ -96,7 +96,7 @@
 								</FontIcon>
 								<CheckBox
 									Grid.Column="1"
-									Click="ColumnCheckBox_Click"
+									Command="{x:Bind ToggleCommand}"
 									IsChecked="{x:Bind IsChecked, Mode=OneWay}"
 									IsEnabled="{x:Bind IsEnabled}"
 									Visibility="{x:Bind IsGroup}">
@@ -110,7 +110,7 @@
 								<CheckBox
 									Grid.Column="1"
 									Margin="28,0,0,0"
-									Click="ColumnCheckBox_Click"
+									Command="{x:Bind ToggleCommand}"
 									IsChecked="{x:Bind IsChecked, Mode=OneWay}"
 									IsEnabled="{x:Bind IsEnabled}"
 									Visibility="{x:Bind IsColumn}">
@@ -136,19 +136,19 @@
 				<ColumnDefinition Width="*" />
 				<ColumnDefinition Width="Auto" />
 			</Grid.ColumnDefinitions>
-			<Button Click="RestoreDefaults_Click" Content="{helpers:ResourceString Name=RestoreDefaults}" />
+			<Button Command="{x:Bind ViewModel.RestoreDefaultsCommand}" Content="{helpers:ResourceString Name=RestoreDefaults}" />
 			<StackPanel
 				Grid.Column="2"
 				Orientation="Horizontal"
 				Spacing="8">
 				<Button
 					MinWidth="96"
-					Click="Save_Click"
+					Command="{x:Bind ViewModel.SaveCommand}"
 					Content="{helpers:ResourceString Name=Save}"
 					Style="{StaticResource AccentButtonStyle}" />
 				<Button
 					MinWidth="96"
-					Click="Cancel_Click"
+					Command="{x:Bind ViewModel.CancelCommand}"
 					Content="{helpers:ResourceString Name=Cancel}" />
 			</StackPanel>
 		</Grid>

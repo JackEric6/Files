@@ -1260,19 +1260,7 @@ namespace Files.App.ViewModels
 			if (ColumnValueHelper.IsShellPropertyColumn(columnId))
 			{
 				string[] propertyNames = [columnId];
-				await Task.WhenAll(items
-					.Where(item => !string.IsNullOrEmpty(item.ItemPath) && item.ShellPropertyValues?.ContainsKey(columnId) is not true)
-					.Select(async item =>
-					{
-						var values = await ShellPropertyReader.ReadAsync(item.ItemPath!, propertyNames);
-						if (item.ShellPropertyValues is { } current)
-						{
-							foreach (var (id, value) in current)
-								values.TryAdd(id, value);
-						}
-
-						item.ShellPropertyValues = values;
-					}));
+				await Task.WhenAll(items.Select(item => ShellPropertyValueLoader.LoadAsync(item, propertyNames)));
 			}
 			else if (ColumnValueHelper.IsGitColumn(columnId))
 			{

@@ -71,7 +71,6 @@ namespace Files.App.Views.Layouts
 		private Dictionary<string, int>? _headerColumnIndices;
 		private readonly Dictionary<string, ColumnHeader> _columnHeaders = [];
 		private IReadOnlyDictionary<string, ShellPropertyColumnInfo>? _shellPropertyCatalog;
-		private readonly HashSet<ListedItem> _shellPropertyLoads = [];
 		private string? _contextColumnId;
 
 		private const double ColumnReorderDragThreshold = 6;
@@ -1204,45 +1203,8 @@ namespace Files.App.Views.Layouts
 				_ = LoadShellPropertiesAsync(item);
 		}
 
-		private async Task LoadShellPropertiesAsync(ListedItem item)
-		{
-			var propertyColumnIds = ColumnsViewModel.PropertyColumnIds;
-			if (propertyColumnIds.Count == 0 || string.IsNullOrEmpty(item.ItemPath))
-				return;
-
-			var existing = item.ShellPropertyValues;
-			var missing = propertyColumnIds.Where(id => existing is null || !existing.ContainsKey(id)).ToArray();
-			if (missing.Length == 0 || !_shellPropertyLoads.Add(item))
-				return;
-
-			try
-			{
-				var values = await ShellPropertyReader.ReadAsync(item.ItemPath, missing);
-				if (item.ShellPropertyValues is { } current)
-				{
-					foreach (var (id, value) in current)
-						values.TryAdd(id, value);
-				}
-
-				item.ShellPropertyValues = values;
-				RefreshGeneratedCells(item);
-			}
-			finally
-			{
-				_shellPropertyLoads.Remove(item);
-			}
-		}
-
-		[DynamicWindowsRuntimeCast(typeof(SelectorItem))]
-		[DynamicWindowsRuntimeCast(typeof(UserControl))]
-		private void RefreshGeneratedCells(ListedItem item)
-		{
-			if (FileList.ContainerFromItem(item) is SelectorItem container &&
-				container.ContentTemplateRoot is UserControl { Content: DetailsLayoutRowPanel panel })
-			{
-				panel.RefreshGeneratedCells();
-			}
-		}
+		private Task LoadShellPropertiesAsync(ListedItem item)
+			=> ShellPropertyValueLoader.LoadAsync(item, ColumnsViewModel.PropertyColumnIds);
 
 		private sealed class ColumnHeader(ColumnDefinition column, ColumnDefinition divider, DataGridHeader header, Files.App.Controls.GridSplitter splitter, Action layoutChanged)
 		{
@@ -1365,17 +1327,7 @@ namespace Files.App.Views.Layouts
 		{
 			var catalog = _shellPropertyCatalog ?? await ShellPropertyCatalog.GetAsync();
 			var folderColumns = await ShellFolderColumns.GetAsync(ParentShellPageInstance.GetRequiredShellViewModel().WorkingDirectory);
-			var propertyColumns = folderColumns.Count > 0
-				? folderColumns.Select(column => column.Id).Where(catalog.ContainsKey).Concat(ColumnsViewModel.OrderedColumns.Ids.Where(ColumnsViewModel.IsColumnVisible))
-				: catalog.Keys;
-
-			var availableColumns = DetailsLayoutColumnIds.BuiltIn
-				.Where(id => !DetailsLayoutColumnOrder.IsRequired(id) && !ColumnsViewModel.GetColumn(id).IsHidden)
-				.Concat(propertyColumns.Where(id => !DetailsLayoutColumnDefinitions.IsBuiltIn(id)))
-				.Distinct()
-				.ToArray();
-
-			var shownColumns = ColumnsViewModel.OrderedColumns.Ids.Where(id => ColumnsViewModel.IsColumnVisible(id) && !ColumnsViewModel.GetColumn(id).IsHidden);
+			var (availableColumns, shownColumns) = ColumnsViewModel.GetCustomizationColumns(folderColumns, catalog);
 			var template = LayoutTemplatesService.GetTemplate(FolderSettings?.TemplateId) ?? LayoutTemplatesService.DefaultTemplate;
 			var defaultColumns = DetailsLayoutColumnDefaults.GetColumns(template).Where(availableColumns.Contains);
 
@@ -1385,31 +1337,13 @@ namespace Files.App.Views.Layouts
 				if (!IsLoaded)
 					return;
 
-				SetColumnsVisibility(availableColumns.Select(id => (id, columns.Contains(id))));
-				ColumnsViewModel.ColumnOrder = [.. columns, .. ColumnsViewModel.OrderedColumns.Ids.Where(id => !columns.Contains(id) && !DetailsLayoutColumnOrder.IsPinned(id))];
-				SaveColumnLayout();
+				if (ColumnsViewModel.ApplyCustomization(columns, availableColumns, catalog))
+					LoadShellPropertiesForRealizedItems();
+
+				SaveColumnVisibility();
 			};
 
 			ColumnCustomizationWindow.Show(viewModel);
-		}
-
-		private void SetColumnsVisibility(IEnumerable<(string Id, bool IsVisible)> changes)
-		{
-			var hasNewColumns = false;
-			foreach (var (id, isVisible) in changes)
-			{
-				if (isVisible == ColumnsViewModel.IsColumnVisible(id))
-					continue;
-
-				var width = _shellPropertyCatalog is not null && _shellPropertyCatalog.TryGetValue(id, out var info) ? info.DefaultWidth : 150;
-				ColumnsViewModel.SetColumnVisibility(id, isVisible, width);
-				hasNewColumns |= isVisible;
-			}
-
-			if (hasNewColumns)
-				LoadShellPropertiesForRealizedItems();
-
-			SaveColumnVisibility();
 		}
 
 		[DynamicWindowsRuntimeCast(typeof(ToggleMenuFlyoutItem))]

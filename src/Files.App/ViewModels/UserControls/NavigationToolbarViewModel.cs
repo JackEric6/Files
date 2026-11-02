@@ -118,6 +118,24 @@ namespace Files.App.ViewModels.UserControls
 		public bool IsDetailsLayout => _InstanceViewModel?.FolderSettings.LayoutMode is FolderLayoutModes.DetailsView;
 		public bool IsListLayout => _InstanceViewModel?.FolderSettings.LayoutMode is FolderLayoutModes.ListView;
 
+		/// <summary>
+		/// Gets whether the layout button shows as selected, which it doesn't when the layout comes from a template.
+		/// </summary>
+		public bool IsCardsLayoutChecked => IsCardsLayout && !IsLayoutTemplateApplied;
+		public bool IsColumnLayoutChecked => IsColumnLayout && !IsLayoutTemplateApplied;
+		public bool IsGridLayoutChecked => IsGridLayout && !IsLayoutTemplateApplied;
+		public bool IsDetailsLayoutChecked => IsDetailsLayout && !IsLayoutTemplateApplied;
+		public bool IsListLayoutChecked => IsListLayout && !IsLayoutTemplateApplied;
+
+		/// <summary>
+		/// Gets whether the layout is the current one and comes from the template of the folder.
+		/// </summary>
+		public bool IsCardsLayoutFromTemplate => IsCardsLayout && IsLayoutTemplateApplied;
+		public bool IsColumnLayoutFromTemplate => IsColumnLayout && IsLayoutTemplateApplied;
+		public bool IsGridLayoutFromTemplate => IsGridLayout && IsLayoutTemplateApplied;
+		public bool IsDetailsLayoutFromTemplate => IsDetailsLayout && IsLayoutTemplateApplied;
+		public bool IsListLayoutFromTemplate => IsListLayout && IsLayoutTemplateApplied;
+
 		public bool IsLayoutSizeCompact =>
 			(IsDetailsLayout && UserSettingsService.LayoutSettingsService.DetailsViewSize == DetailsViewSizeKind.Compact) ||
 			(IsListLayout && UserSettingsService.LayoutSettingsService.ListViewSize == ListViewSizeKind.Compact) ||
@@ -1517,6 +1535,7 @@ namespace Files.App.ViewModels.UserControls
 					OnPropertyChanged(nameof(IsColumnLayout));
 					OnPropertyChanged(nameof(IsGridLayout));
 					OnPropertyChanged(nameof(IsDetailsLayout));
+					OnPropertyChangedForLayoutButtons();
 					OnPropertyChanged(nameof(IsLayoutSizeCompact));
 					OnPropertyChanged(nameof(IsLayoutSizeSmall));
 					OnPropertyChanged(nameof(IsLayoutSizeMedium));
@@ -1539,8 +1558,16 @@ namespace Files.App.ViewModels.UserControls
 			}
 		}
 
+		private void OnPropertyChangedForLayoutButtons()
+		{
+			foreach (var name in (string[])[nameof(IsCardsLayoutChecked), nameof(IsColumnLayoutChecked), nameof(IsGridLayoutChecked), nameof(IsDetailsLayoutChecked), nameof(IsListLayoutChecked),
+				nameof(IsCardsLayoutFromTemplate), nameof(IsColumnLayoutFromTemplate), nameof(IsGridLayoutFromTemplate), nameof(IsDetailsLayoutFromTemplate), nameof(IsListLayoutFromTemplate)])
+				OnPropertyChanged(name);
+		}
+
 		private void UpdateLayoutTemplateProperties()
 		{
+			OnPropertyChangedForLayoutButtons();
 			OnPropertyChanged(nameof(SelectedLayoutTemplate));
 			OnPropertyChanged(nameof(IsLayoutTemplateApplied));
 			EditLayoutTemplateCommand.NotifyCanExecuteChanged();

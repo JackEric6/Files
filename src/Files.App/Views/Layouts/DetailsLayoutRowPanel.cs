@@ -156,6 +156,7 @@ namespace Files.App.Views.Layouts
 		private void Item_PropertyChanged(object? sender, PropertyChangedEventArgs e)
 		{
 			if (!string.IsNullOrEmpty(e.PropertyName) &&
+				e.PropertyName is not nameof(ListedItem.ShellPropertyValues) &&
 				!_generatedCells.Keys.Any(id => DetailsLayoutColumnDefinitions.Get(id)?.TextProperties?.Contains(e.PropertyName) is true))
 			{
 				return;

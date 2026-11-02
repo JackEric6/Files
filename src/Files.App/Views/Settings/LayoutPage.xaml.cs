@@ -11,21 +11,13 @@ namespace Files.App.Views.Settings
 {
 	public sealed partial class LayoutPage : Page
 	{
-		private string? _templateIdToEdit;
-
 		public LayoutPage()
 		{
 			InitializeComponent();
 			Loaded += (_, _) =>
 			{
-				ViewModel.StartListening();
 				ViewModel.EditTemplateRequested += ViewModel_EditTemplateRequested;
-
-				if (_templateIdToEdit is { } id)
-				{
-					_templateIdToEdit = null;
-					_ = ViewModel.EditTemplateAsync(id);
-				}
+				ViewModel.StartListening();
 			};
 			Unloaded += (_, _) =>
 			{
@@ -37,7 +29,7 @@ namespace Files.App.Views.Settings
 		protected override void OnNavigatedTo(NavigationEventArgs e)
 		{
 			base.OnNavigatedTo(e);
-			_templateIdToEdit = e.NavigationMode is NavigationMode.New ? e.Parameter as string : null;
+			ViewModel.TemplateIdToEdit = e.NavigationMode is NavigationMode.New ? e.Parameter as string : null;
 		}
 
 		private void ViewModel_EditTemplateRequested(object? sender, LayoutTemplateEditorViewModel editor)

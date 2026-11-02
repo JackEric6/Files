@@ -375,21 +375,21 @@
 									Click="LayoutButton_Click"
 									Command="{x:Bind Commands.LayoutDetails}"
 									GroupName="LayoutRadio"
-									IsChecked="{x:Bind IsLayoutToggled(ViewModel.IsDetailsLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+									IsChecked="{x:Bind ViewModel.IsDetailsLayoutChecked, Mode=OneWay}"
 									Style="{StaticResource Local.RadioToggleButtonStyle}"
 									ToolTipService.ToolTip="{x:Bind Commands.LayoutDetails.LabelWithHotKey, Mode=OneWay}">
 									<StackPanel Spacing="4">
 										<controls:ThemedIcon
 											Width="28"
 											Height="28"
-											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsDetailsLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
-											IsFilled="{x:Bind IsTemplateLayout(ViewModel.IsDetailsLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsDetailsLayoutFromTemplate), Mode=OneWay}"
+											IsFilled="{x:Bind ViewModel.IsDetailsLayoutFromTemplate, Mode=OneWay}"
 											Style="{StaticResource App.ThemedIcons.IconLayout.Details.28}" />
 
 										<TextBlock
 											HorizontalAlignment="Center"
 											FontSize="12"
-											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsDetailsLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsDetailsLayoutFromTemplate), Mode=OneWay}"
 											Text="{x:Bind Commands.LayoutDetails.Label}"
 											TextTrimming="CharacterEllipsis"
 											TextWrapping="NoWrap" />
@@ -402,7 +402,7 @@
 									Click="LayoutButton_Click"
 									Command="{x:Bind Commands.LayoutList}"
 									GroupName="LayoutRadio"
-									IsChecked="{x:Bind IsLayoutToggled(ViewModel.IsListLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+									IsChecked="{x:Bind ViewModel.IsListLayoutChecked, Mode=OneWay}"
 									Style="{StaticResource Local.RadioToggleButtonStyle}"
 									ToolTipService.ToolTip="{x:Bind Commands.LayoutList.LabelWithHotKey, Mode=OneWay}">
 
@@ -410,14 +410,14 @@
 										<controls:ThemedIcon
 											Width="28"
 											Height="28"
-											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsListLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
-											IsFilled="{x:Bind IsTemplateLayout(ViewModel.IsListLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsListLayoutFromTemplate), Mode=OneWay}"
+											IsFilled="{x:Bind ViewModel.IsListLayoutFromTemplate, Mode=OneWay}"
 											Style="{StaticResource App.ThemedIcons.IconLayout.List.28}" />
 
 										<TextBlock
 											HorizontalAlignment="Center"
 											FontSize="12"
-											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsListLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsListLayoutFromTemplate), Mode=OneWay}"
 											Text="{x:Bind Commands.LayoutList.Label}"
 											TextTrimming="CharacterEllipsis"
 											TextWrapping="NoWrap" />
@@ -430,7 +430,7 @@
 									Click="LayoutButton_Click"
 									Command="{x:Bind Commands.LayoutCards}"
 									GroupName="LayoutRadio"
-									IsChecked="{x:Bind IsLayoutToggled(ViewModel.IsCardsLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+									IsChecked="{x:Bind ViewModel.IsCardsLayoutChecked, Mode=OneWay}"
 									Style="{StaticResource Local.RadioToggleButtonStyle}"
 									ToolTipService.ToolTip="{x:Bind Commands.LayoutCards.LabelWithHotKey, Mode=OneWay}">
 
@@ -438,14 +438,14 @@
 										<controls:ThemedIcon
 											Width="28"
 											Height="28"
-											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsCardsLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
-											IsFilled="{x:Bind IsTemplateLayout(ViewModel.IsCardsLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsCardsLayoutFromTemplate), Mode=OneWay}"
+											IsFilled="{x:Bind ViewModel.IsCardsLayoutFromTemplate, Mode=OneWay}"
 											Style="{StaticResource App.ThemedIcons.IconLayout.Tiles.28}" />
 
 										<TextBlock
 											HorizontalAlignment="Center"
 											FontSize="12"
-											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsCardsLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsCardsLayoutFromTemplate), Mode=OneWay}"
 											Text="{x:Bind Commands.LayoutCards.Label}"
 											TextTrimming="CharacterEllipsis"
 											TextWrapping="NoWrap" />
@@ -458,7 +458,7 @@
 									Click="LayoutButton_Click"
 									Command="{x:Bind Commands.LayoutGrid}"
 									GroupName="LayoutRadio"
-									IsChecked="{x:Bind IsLayoutToggled(ViewModel.IsGridLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+									IsChecked="{x:Bind ViewModel.IsGridLayoutChecked, Mode=OneWay}"
 									Style="{StaticResource Local.RadioToggleButtonStyle}"
 									ToolTipService.ToolTip="{x:Bind Commands.LayoutGrid.LabelWithHotKey, Mode=OneWay}">
 
@@ -466,14 +466,14 @@
 										<controls:ThemedIcon
 											Width="28"
 											Height="28"
-											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsGridLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
-											IsFilled="{x:Bind IsTemplateLayout(ViewModel.IsGridLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsGridLayoutFromTemplate), Mode=OneWay}"
+											IsFilled="{x:Bind ViewModel.IsGridLayoutFromTemplate, Mode=OneWay}"
 											Style="{StaticResource App.ThemedIcons.IconLayout.Grid.28}" />
 
 										<TextBlock
 											HorizontalAlignment="Center"
 											FontSize="12"
-											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsGridLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsGridLayoutFromTemplate), Mode=OneWay}"
 											Text="{x:Bind Commands.LayoutGrid.Label}"
 											TextTrimming="CharacterEllipsis"
 											TextWrapping="NoWrap" />
@@ -486,7 +486,7 @@
 									Click="LayoutButton_Click"
 									Command="{x:Bind Commands.LayoutColumns}"
 									GroupName="LayoutRadio"
-									IsChecked="{x:Bind IsLayoutToggled(ViewModel.IsColumnLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+									IsChecked="{x:Bind ViewModel.IsColumnLayoutChecked, Mode=OneWay}"
 									Style="{StaticResource Local.RadioToggleButtonStyle}"
 									ToolTipService.ToolTip="{x:Bind Commands.LayoutColumns.LabelWithHotKey, Mode=OneWay}">
 
@@ -494,14 +494,14 @@
 										<controls:ThemedIcon
 											Width="28"
 											Height="28"
-											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsColumnLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
-											IsFilled="{x:Bind IsTemplateLayout(ViewModel.IsColumnLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											IconColorType="{x:Bind GetLayoutIconColor(ViewModel.IsColumnLayoutFromTemplate), Mode=OneWay}"
+											IsFilled="{x:Bind ViewModel.IsColumnLayoutFromTemplate, Mode=OneWay}"
 											Style="{StaticResource App.ThemedIcons.IconLayout.Columns.28}" />
 
 										<TextBlock
 											HorizontalAlignment="Center"
 											FontSize="12"
-											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsColumnLayout, ViewModel.IsLayoutTemplateApplied), Mode=OneWay}"
+											Style="{x:Bind GetLayoutLabelStyle(ViewModel.IsColumnLayoutFromTemplate), Mode=OneWay}"
 											Text="{x:Bind Commands.LayoutColumns.Label}"
 											TextTrimming="CharacterEllipsis"
 											TextWrapping="NoWrap" />

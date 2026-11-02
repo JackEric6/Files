@@ -16,8 +16,6 @@ namespace Files.App.Views.Settings
 	/// </summary>
 	public sealed partial class ColumnCustomizationPage : Page
 	{
-		private WindowEx? _hostWindow;
-
 		public ColumnCustomizationViewModel ViewModel { get; private set; } = null!;
 
 		public FrameworkElement TitleBarElement => WindowTitleBar;
@@ -32,31 +30,15 @@ namespace Files.App.Views.Settings
 			base.OnNavigatedTo(e);
 			if (e.Parameter is ColumnCustomizationNavigationArguments { Window: var window, ViewModel: var viewModel })
 			{
-				_hostWindow = window;
 				ViewModel = viewModel;
+				ViewModel.CloseRequested += (_, _) => window.Close();
 				Bindings.Update();
-			}
-		}
-
-		[DynamicWindowsRuntimeCast(typeof(CheckBox))]
-		private void ColumnCheckBox_Click(object sender, RoutedEventArgs e)
-		{
-			if (sender is CheckBox { DataContext: ColumnPickerItem item } checkBox)
-			{
-				ViewModel.Toggle(item);
-				checkBox.IsChecked = item.IsChecked;
 			}
 		}
 
 		private void ColumnsList_ItemClick(object sender, ItemClickEventArgs e)
 		{
-			if (e.ClickedItem is not ColumnPickerItem item)
-				return;
-
-			if (item.IsGroup)
-				ViewModel.ToggleExpanded(item);
-			else
-				ViewModel.Toggle(item);
+			(e.ClickedItem as ColumnPickerItem)?.ActivateCommand.Execute(null);
 		}
 
 		[DynamicWindowsRuntimeCast(typeof(FrameworkElement))]
@@ -78,22 +60,6 @@ namespace Files.App.Views.Settings
 					e.Handled = true;
 					break;
 			}
-		}
-
-		private void RestoreDefaults_Click(object sender, RoutedEventArgs e)
-		{
-			ViewModel.RestoreDefaults();
-		}
-
-		private void Save_Click(object sender, RoutedEventArgs e)
-		{
-			ViewModel.Save();
-			_hostWindow?.Close();
-		}
-
-		private void Cancel_Click(object sender, RoutedEventArgs e)
-		{
-			_hostWindow?.Close();
 		}
 	}
 }

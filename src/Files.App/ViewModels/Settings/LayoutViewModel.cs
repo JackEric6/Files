@@ -30,6 +30,12 @@ namespace Files.App.ViewModels.Settings
 			LayoutTemplatesService.PropertyChanged -= LayoutTemplatesService_PropertyChanged;
 			LayoutTemplatesService.PropertyChanged += LayoutTemplatesService_PropertyChanged;
 			RefreshSettings();
+
+			if (TemplateIdToEdit is { } id)
+			{
+				TemplateIdToEdit = null;
+				_ = EditTemplateAsync(id);
+			}
 		}
 
 		internal void StopListening()
@@ -60,6 +66,11 @@ namespace Files.App.ViewModels.Settings
 		/// Occurs when a template should be opened for editing.
 		/// </summary>
 		public event EventHandler<LayoutTemplateEditorViewModel>? EditTemplateRequested;
+
+		/// <summary>
+		/// Gets or sets the template to open once the page starts listening, such as when Settings opens to a template.
+		/// </summary>
+		public string? TemplateIdToEdit { get; set; }
 
 		public ICommand EditDefaultTemplateCommand { get; }
 
@@ -105,7 +116,7 @@ namespace Files.App.ViewModels.Settings
 			await EditTemplateAsync(template.Id);
 		}
 
-		public async Task EditTemplateAsync(string id)
+		private async Task EditTemplateAsync(string id)
 		{
 			if (LayoutTemplatesService.GetTemplate(id) is not { } template)
 				return;

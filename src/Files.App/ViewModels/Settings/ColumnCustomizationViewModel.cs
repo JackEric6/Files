@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 using System.Collections.ObjectModel;
+using System.Windows.Input;
 
 namespace Files.App.ViewModels.Settings
 {
@@ -10,12 +11,30 @@ namespace Files.App.ViewModels.Settings
 	/// </summary>
 	public sealed partial class ColumnPickerItem : ObservableObject
 	{
-		public ColumnPickerItem(string id, string displayName, ColumnPickerItem? group = null)
+		public ColumnPickerItem(string id, string displayName, ColumnCustomizationViewModel owner, ColumnPickerItem? group = null)
 		{
 			Id = id;
 			DisplayName = displayName;
 			Group = group;
+			ToggleCommand = new RelayCommand(() => owner.Toggle(this));
+			ActivateCommand = new RelayCommand(() =>
+			{
+				if (IsGroup)
+					owner.ToggleExpanded(this);
+				else
+					owner.Toggle(this);
+			});
 		}
+
+		/// <summary>
+		/// Gets the command that shows or hides the column, or all columns of the group.
+		/// </summary>
+		public ICommand ToggleCommand { get; }
+
+		/// <summary>
+		/// Gets the command that runs when the row is clicked: a group expands or collapses, and a column is shown or hidden.
+		/// </summary>
+		public ICommand ActivateCommand { get; }
 
 		public string Id { get; }
 
@@ -98,6 +117,17 @@ namespace Files.App.ViewModels.Settings
 		/// </summary>
 		public event EventHandler<IReadOnlyList<string>>? Saved;
 
+		/// <summary>
+		/// Occurs when the window should close, after saving or canceling.
+		/// </summary>
+		public event EventHandler? CloseRequested;
+
+		public ICommand RestoreDefaultsCommand { get; }
+
+		public ICommand SaveCommand { get; }
+
+		public ICommand CancelCommand { get; }
+
 		public string Title { get; }
 
 		public string? Description { get; }
@@ -116,14 +146,18 @@ namespace Files.App.ViewModels.Settings
 				.OrderBy(group => group.Key)
 				.Select(group =>
 				{
-					var groupItem = new ColumnPickerItem(group.Key.ToString(), GetGroupDisplayName(group.Key));
+					var groupItem = new ColumnPickerItem(group.Key.ToString(), GetGroupDisplayName(group.Key), this);
 					groupItem.Columns.AddRange(group
-						.Select(id => new ColumnPickerItem(id, getDisplayName(id), groupItem))
+						.Select(id => new ColumnPickerItem(id, getDisplayName(id), this, groupItem))
 						.OrderBy(column => column.IsEnabled)
 						.ThenBy(column => column.DisplayName, StringComparer.CurrentCultureIgnoreCase));
 
 					return groupItem;
 				}).ToArray();
+
+			RestoreDefaultsCommand = new RelayCommand(RestoreDefaults);
+			SaveCommand = new RelayCommand(Save);
+			CancelCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
 
 			SetShownColumns(shownColumns);
 			UpdateItems();
@@ -151,14 +185,15 @@ namespace Files.App.ViewModels.Settings
 			UpdateCheckStates();
 		}
 
-		public void RestoreDefaults()
+		private void RestoreDefaults()
 		{
 			SetShownColumns(_defaultColumns);
 		}
 
-		public void Save()
+		private void Save()
 		{
 			Saved?.Invoke(this, _shownColumns.ToArray());
+			CloseRequested?.Invoke(this, EventArgs.Empty);
 		}
 
 		private void SetColumnShown(ColumnPickerItem column, bool isShown)

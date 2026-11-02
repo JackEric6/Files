@@ -157,9 +157,7 @@ namespace Files.App.Data.Factories
 					ShowInZipPage = true,
 					Items =
 					[
-						.. GetOptionMenuItems(
-							LayoutSortGroupOptions.GetSortOptions(currentInstanceViewModel.FolderSettings, itemViewModel),
-							id => LayoutSortGroupOptions.SortBy(currentInstanceViewModel.FolderSettings, id)),
+						.. GetSortMenuItems(currentInstanceViewModel.FolderSettings, itemViewModel),
 						new ContextMenuFlyoutItemViewModel
 						{
 							ItemType = ContextMenuFlyoutItemType.Separator,
@@ -189,9 +187,7 @@ namespace Files.App.Data.Factories
 					ShowInZipPage = true,
 					Items =
 					[
-						.. GetOptionMenuItems(
-							LayoutSortGroupOptions.GetGroupOptions(currentInstanceViewModel.FolderSettings, itemViewModel),
-							id => LayoutSortGroupOptions.GroupBy(currentInstanceViewModel.FolderSettings, id)),
+						.. GetGroupMenuItems(currentInstanceViewModel.FolderSettings, itemViewModel),
 						new ContextMenuFlyoutItemViewModel
 						{
 							ItemType = ContextMenuFlyoutItemType.Separator,
@@ -601,6 +597,18 @@ namespace Files.App.Data.Factories
 
 			return list;
 		}
+
+		/// <summary>
+		/// Gets the items of the sort menus for the specified folder, shared by the context menu and the toolbar.
+		/// </summary>
+		public static List<ContextMenuFlyoutItemViewModel> GetSortMenuItems(LayoutPreferencesManager folderSettings, ShellViewModel? shellViewModel)
+			=> GetOptionMenuItems(LayoutSortGroupOptions.GetSortOptions(folderSettings, shellViewModel), id => LayoutSortGroupOptions.SortBy(folderSettings, id));
+
+		/// <summary>
+		/// Gets the items of the group menus for the specified folder, shared by the context menu and the toolbar.
+		/// </summary>
+		public static List<ContextMenuFlyoutItemViewModel> GetGroupMenuItems(LayoutPreferencesManager folderSettings, ShellViewModel? shellViewModel)
+			=> GetOptionMenuItems(LayoutSortGroupOptions.GetGroupOptions(folderSettings, shellViewModel), id => LayoutSortGroupOptions.GroupBy(folderSettings, id));
 
 		private static List<ContextMenuFlyoutItemViewModel> GetOptionMenuItems(IReadOnlyList<LayoutSortGroupOption> options, Action<string> selectColumn)
 		{

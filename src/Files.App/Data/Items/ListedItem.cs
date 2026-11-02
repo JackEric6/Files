@@ -35,7 +35,12 @@ namespace Files.App.Utils
 
 		public bool NeedsDelayedThumbnailLoad { get; set; }
 
-		public IReadOnlyDictionary<string, ShellPropertyValue>? ShellPropertyValues { get; set; }
+		private IReadOnlyDictionary<string, ShellPropertyValue>? _ShellPropertyValues;
+		public IReadOnlyDictionary<string, ShellPropertyValue>? ShellPropertyValues
+		{
+			get => _ShellPropertyValues;
+			set => SetProperty(ref _ShellPropertyValues, value);
+		}
 
 		private volatile int itemPropertiesInitialized = 0;
 		public bool ItemPropertiesInitialized
