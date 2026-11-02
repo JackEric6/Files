@@ -263,9 +263,21 @@
 								Visibility="{x:Bind Commands.GroupDescending.IsExecutable, Mode=OneWay}" />
 						</MenuFlyoutSubItem>
 						<MenuFlyoutSeparator />
-						<ToggleMenuFlyoutItem IsChecked="{x:Bind Commands.SortFoldersFirst.IsOn, Mode=TwoWay}" Text="{x:Bind Commands.SortFoldersFirst.Label}" />
-						<ToggleMenuFlyoutItem IsChecked="{x:Bind Commands.SortFilesFirst.IsOn, Mode=TwoWay}" Text="{x:Bind Commands.SortFilesFirst.Label}" />
-						<ToggleMenuFlyoutItem IsChecked="{x:Bind Commands.SortFilesAndFoldersTogether.IsOn, Mode=TwoWay}" Text="{x:Bind Commands.SortFilesAndFoldersTogether.Label}" />
+						<RadioMenuFlyoutItem
+							Command="{x:Bind Commands.SortFoldersFirst}"
+							GroupName="SortPriority"
+							IsChecked="{x:Bind Commands.SortFoldersFirst.IsOn, Mode=OneWay}"
+							Text="{x:Bind Commands.SortFoldersFirst.Label}" />
+						<RadioMenuFlyoutItem
+							Command="{x:Bind Commands.SortFilesFirst}"
+							GroupName="SortPriority"
+							IsChecked="{x:Bind Commands.SortFilesFirst.IsOn, Mode=OneWay}"
+							Text="{x:Bind Commands.SortFilesFirst.Label}" />
+						<RadioMenuFlyoutItem
+							Command="{x:Bind Commands.SortFilesAndFoldersTogether}"
+							GroupName="SortPriority"
+							IsChecked="{x:Bind Commands.SortFilesAndFoldersTogether.IsOn, Mode=OneWay}"
+							Text="{x:Bind Commands.SortFilesAndFoldersTogether.Label}" />
 					</MenuFlyout>
 				</AppBarButton.Flyout>
 
