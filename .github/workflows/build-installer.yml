@@ -248,13 +248,15 @@ jobs:
           $ErrorActionPreference = "Stop"
           $setup = Join-Path $env:ARTIFACTS_STAGING_DIR "${{ steps.metadata.outputs.setup_name }}"
           $logPath = Join-Path $env:TEMP "FilesCommunityInstall-$($env:APP_VERSION).log"
+          $setupLogPath = Join-Path $env:TEMP "FilesSetup-$($env:APP_VERSION).log"
           $arguments = @(
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
             "/NORESTART",
             "/SP-",
             '/DIR="C:\Program Files\WindowsApps"',
-            "/TASKS=desktopicon"
+            "/TASKS=desktopicon",
+            "/LOG=$setupLogPath"
           )
           $process = Start-Process `
             -FilePath $setup `
@@ -292,12 +294,36 @@ jobs:
           $desktopDirectories = @(
             [Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
             [Environment]::GetFolderPath([System.Environment+SpecialFolder]::CommonDesktopDirectory)
+            (Join-Path $env:USERPROFILE "Desktop")
+            (Join-Path $env:PUBLIC "Desktop")
+            (Join-Path $env:SystemDrive "Users\Public\Desktop")
+            (Join-Path $env:SystemDrive "Users\$env:USERNAME\Desktop")
+          ) |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Select-Object -Unique
+          Write-Output "Checked desktop directories:"
+          $desktopDirectories | ForEach-Object { Write-Output " - $_" }
+          $desktopDirectories = @(
+            $desktopDirectories
+            Get-ChildItem -Path (Join-Path $env:SystemDrive "Users") -Directory -ErrorAction SilentlyContinue |
+              ForEach-Object { Join-Path $_.FullName "Desktop" }
           ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
           $desktopShortcut = $desktopDirectories |
             ForEach-Object { Join-Path $_ "Files.lnk" } |
             Where-Object { Test-Path -Path $_ -PathType Leaf } |
             Select-Object -First 1
           if (-not $desktopShortcut) {
+            if (Test-Path $setupLogPath) {
+              Get-Content $setupLogPath | Select-String -Pattern "desktop|Files.lnk|Creating icon|Create shortcut"
+            }
+            Get-ChildItem `
+              -Path (Join-Path $env:SystemDrive "Users") `
+              -Filter "Files.lnk" `
+              -File `
+              -Recurse `
+              -Force `
+              -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName
             throw "The installer did not create the requested desktop shortcut."
           }
           Write-Output "Verified Files $env:APP_VERSION installation and desktop shortcut at $desktopShortcut on the Windows runner."
