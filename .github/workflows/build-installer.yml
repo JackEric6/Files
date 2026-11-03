@@ -29,6 +29,8 @@ jobs:
       artifact_name: ${{ steps.metadata.outputs.artifact_name }}
       version: ${{ steps.metadata.outputs.version }}
       zip_name: ${{ steps.metadata.outputs.zip_name }}
+      bundle_name: ${{ steps.metadata.outputs.bundle_name }}
+      certificate_name: ${{ steps.metadata.outputs.certificate_name }}
     env:
       CONFIGURATION: Release
       PLATFORM: x64
@@ -147,6 +149,9 @@ jobs:
 
           $zipName = "Files-$version-Windows-x64.zip"
           $zipPath = Join-Path $env:ARTIFACTS_STAGING_DIR $zipName
+          $bundleName = "Files-$version-Windows-x64.msixbundle"
+          Copy-Item $bundle.FullName (Join-Path $env:ARTIFACTS_STAGING_DIR $bundleName)
+          $certificateName = "FilesApp_SelfSigned.cer"
           $archiveEntries = @(
             $packagesRoot
             (Join-Path $env:ARTIFACTS_STAGING_DIR "FilesApp_SelfSigned.cer")
@@ -158,13 +163,18 @@ jobs:
 
           "version=$version" >> $env:GITHUB_OUTPUT
           "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+          "bundle_name=$bundleName" >> $env:GITHUB_OUTPUT
+          "certificate_name=$certificateName" >> $env:GITHUB_OUTPUT
           "artifact_name=Files-Windows-x64-$version-run-$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
 
       - name: Upload install package artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.metadata.outputs.artifact_name }}
-          path: ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.zip_name }}
+          path: |
+            ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.zip_name }}
+            ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.bundle_name }}
+            ${{ env.ARTIFACTS_STAGING_DIR }}\FilesApp_SelfSigned.cer
           if-no-files-found: error
           retention-days: 1
 
@@ -188,8 +198,12 @@ jobs:
           RELEASE_TAG: community-v${{ needs.build.outputs.version }}-build-${{ github.run_id }}-${{ github.run_attempt }}
           RELEASE_TITLE: Files Community Build ${{ needs.build.outputs.version }} (Windows x64)
           ZIP_NAME: ${{ needs.build.outputs.zip_name }}
+          BUNDLE_NAME: ${{ needs.build.outputs.bundle_name }}
+          CERTIFICATE_NAME: ${{ needs.build.outputs.certificate_name }}
         run: |
           gh release create "$RELEASE_TAG" "release-assets/$ZIP_NAME" \
+            "release-assets/$BUNDLE_NAME" \
+            "release-assets/$CERTIFICATE_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$RELEASE_TITLE" \
