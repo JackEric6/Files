@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - '.github/scripts/Install-Files.ps1'
+      - '.github/scripts/Files-Setup.iss'
       - '.github/workflows/build-installer.yml'
       - 'Directory.Packages.props'
       - 'Files.slnx'
@@ -18,6 +19,11 @@ on:
         required: false
         type: boolean
         default: true
+      release_tag:
+        description: Existing release tag to replace (leave blank to create a new release)
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -28,9 +34,7 @@ jobs:
     outputs:
       artifact_name: ${{ steps.metadata.outputs.artifact_name }}
       version: ${{ steps.metadata.outputs.version }}
-      zip_name: ${{ steps.metadata.outputs.zip_name }}
-      bundle_name: ${{ steps.metadata.outputs.bundle_name }}
-      certificate_name: ${{ steps.metadata.outputs.certificate_name }}
+      setup_name: ${{ steps.metadata.outputs.setup_name }}
     env:
       CONFIGURATION: Release
       PLATFORM: x64
@@ -38,6 +42,7 @@ jobs:
       ARTIFACTS_STAGING_DIR: '${{ github.workspace }}\artifacts'
       APPX_PACKAGE_DIR: '${{ github.workspace }}\artifacts\AppxPackages\'
       APP_PROJECT_PATH: 'src\Files.App\Files.App.csproj'
+      LAUNCHER_PROJECT_PATH: 'src\Files.App.Launcher\Files.App.Launcher.vcxproj'
       APPX_SELFSIGNED_CERT_PATH: '${{ github.workspace }}\.github\workflows\FilesApp_SelfSigned.pfx'
 
     steps:
@@ -55,6 +60,33 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install Inno Setup 6.7.4
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installerPath = Join-Path $env:TEMP "innosetup-6.7.4.exe"
+          Invoke-WebRequest `
+            -Uri "https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe" `
+            -OutFile $installerPath
+          $expectedHash = "a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c"
+          $actualHash = (Get-FileHash $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "Inno Setup installer SHA-256 mismatch."
+          }
+          $process = Start-Process `
+            -FilePath $installerPath `
+            -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Inno Setup installation failed with exit code $($process.ExitCode)."
+          }
+          $compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) {
+            throw "Inno Setup compiler was not found."
+          }
+          "INNO_SETUP_COMPILER=$compiler" >> $env:GITHUB_ENV
+
       - name: Restore Files
         shell: pwsh
         run: |
@@ -66,9 +98,29 @@ jobs:
             -v:quiet `
             -clp:ErrorsOnly
 
+      - name: Restore NuGet packages for launcher
+        shell: pwsh
+        run: |
+          nuget restore "$env:LAUNCHER_PROJECT_PATH" `
+            -SolutionDirectory "$env:WORKING_DIR" `
+            -Verbosity quiet
+
       - name: Create self-signed package certificate
         shell: pwsh
         run: ./.github/scripts/Generate-SelfCertPfx.ps1 -Destination "$env:APPX_SELFSIGNED_CERT_PATH"
+
+      - name: Build Files launcher
+        shell: pwsh
+        run: |
+          msbuild "$env:LAUNCHER_PROJECT_PATH" `
+            -t:Build `
+            -p:Platform=$env:PLATFORM `
+            -p:Configuration=$env:CONFIGURATION `
+            -v:quiet
+          $launcher = Join-Path $env:WORKING_DIR "src\Files.App\Assets\FilesOpenDialog\Files.App.Launcher.exe"
+          if (-not (Test-Path $launcher) -or (Get-Item $launcher).Length -eq 0) {
+            throw "Files.App.Launcher.exe was not produced."
+          }
 
       - name: Build and package Files
         shell: pwsh
@@ -138,43 +190,32 @@ jobs:
             Remove-Item -Force
           Copy-Item ".github\scripts\Install-Files.ps1" $env:ARTIFACTS_STAGING_DIR
 
-          @"
-          Files Community fork build ($version), Windows x64.
-
-          This is an unofficial build signed with a per-build self-signed certificate.
-          Extract this archive, then run Install-Files.ps1 from an elevated PowerShell
-          window. The script installs the certificate and Windows App SDK runtime,
-          then installs Files and its package dependencies.
-          "@ | Set-Content -Path (Join-Path $env:ARTIFACTS_STAGING_DIR "README-INSTALL.txt")
-
-          $zipName = "Files-$version-Windows-x64.zip"
-          $zipPath = Join-Path $env:ARTIFACTS_STAGING_DIR $zipName
-          $bundleName = "Files-$version-Windows-x64.msixbundle"
-          Copy-Item $bundle.FullName (Join-Path $env:ARTIFACTS_STAGING_DIR $bundleName)
-          $certificateName = "FilesApp_SelfSigned.cer"
-          $archiveEntries = @(
-            $packagesRoot
-            (Join-Path $env:ARTIFACTS_STAGING_DIR "FilesApp_SelfSigned.cer")
-            (Join-Path $env:ARTIFACTS_STAGING_DIR "windows-app-sdk-version.txt")
-            (Join-Path $env:ARTIFACTS_STAGING_DIR "Install-Files.ps1")
-            (Join-Path $env:ARTIFACTS_STAGING_DIR "README-INSTALL.txt")
-          )
-          Compress-Archive -Path $archiveEntries -DestinationPath $zipPath -CompressionLevel Optimal
+          $setupName = "Files-$version-Windows-x64-Setup.exe"
 
           "version=$version" >> $env:GITHUB_OUTPUT
-          "zip_name=$zipName" >> $env:GITHUB_OUTPUT
-          "bundle_name=$bundleName" >> $env:GITHUB_OUTPUT
-          "certificate_name=$certificateName" >> $env:GITHUB_OUTPUT
+          "setup_name=$setupName" >> $env:GITHUB_OUTPUT
           "artifact_name=Files-Windows-x64-$version-run-$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+
+      - name: Build EXE installer
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          & $env:INNO_SETUP_COMPILER /Qp ".github\scripts\Files-Setup.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE."
+          }
+          $setup = Join-Path $env:ARTIFACTS_STAGING_DIR "${{ steps.metadata.outputs.setup_name }}"
+          if (-not (Test-Path $setup) -or (Get-Item $setup).Length -eq 0) {
+            throw "The EXE installer was not produced."
+          }
 
       - name: Upload install package artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.metadata.outputs.artifact_name }}
-          path: |
-            ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.zip_name }}
-            ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.bundle_name }}
-            ${{ env.ARTIFACTS_STAGING_DIR }}\FilesApp_SelfSigned.cer
+          path: ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.setup_name }}
           if-no-files-found: error
           retention-days: 1
 
@@ -192,20 +233,41 @@ jobs:
           name: ${{ needs.build.outputs.artifact_name }}
           path: release-assets
 
-      - name: Publish public prerelease
+      - name: Publish or replace release with EXE only
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: community-v${{ needs.build.outputs.version }}-build-${{ github.run_id }}-${{ github.run_attempt }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
           RELEASE_TITLE: Files Community Build ${{ needs.build.outputs.version }} (Windows x64)
-          ZIP_NAME: ${{ needs.build.outputs.zip_name }}
-          BUNDLE_NAME: ${{ needs.build.outputs.bundle_name }}
-          CERTIFICATE_NAME: ${{ needs.build.outputs.certificate_name }}
+          SETUP_NAME: ${{ needs.build.outputs.setup_name }}
         run: |
-          gh release create "$RELEASE_TAG" "release-assets/$ZIP_NAME" \
-            "release-assets/$BUNDLE_NAME" \
-            "release-assets/$CERTIFICATE_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "$RELEASE_TITLE" \
-            --notes "Unofficial Windows x64 build from this public fork. The ZIP includes an install script and a per-build self-signed certificate. Extract it and run Install-Files.ps1 from an elevated PowerShell window. This is not an official Files Community release." \
-            --prerelease
+          set -euo pipefail
+          if [[ -n "$RELEASE_TAG_INPUT" ]]; then
+            RELEASE_TAG="$RELEASE_TAG_INPUT"
+          else
+            RELEASE_TAG="community-v${{ needs.build.outputs.version }}-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          NOTES="Unofficial Windows x64 build from this public fork. Download and run the Setup.exe as administrator. The installer embeds the MSIX application package and its per-build self-signed certificate, then installs the Windows App SDK runtime and Files. The Setup.exe is not signed with the official Files Community signing identity. This is not an official Files Community release."
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            ASSETS="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+            while IFS= read -r asset; do
+              [[ -z "$asset" ]] && continue
+              gh release delete-asset "$RELEASE_TAG" "$asset" \
+                --repo "$GITHUB_REPOSITORY" \
+                --yes
+            done <<< "$ASSETS"
+            gh release upload "$RELEASE_TAG" "release-assets/$SETUP_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes "$NOTES" \
+              --prerelease
+          else
+            gh release create "$RELEASE_TAG" "release-assets/$SETUP_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TITLE" \
+              --notes "$NOTES" \
+              --prerelease
+          fi
