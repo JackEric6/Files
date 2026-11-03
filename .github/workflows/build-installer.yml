@@ -1,0 +1,197 @@
+name: Build installable Windows package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/scripts/Install-Files.ps1'
+      - '.github/workflows/build-installer.yml'
+      - 'Directory.Packages.props'
+      - 'Files.slnx'
+      - 'global.json'
+      - 'src/**'
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the package as a public prerelease
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025-vs2026
+    outputs:
+      artifact_name: ${{ steps.metadata.outputs.artifact_name }}
+      version: ${{ steps.metadata.outputs.version }}
+      zip_name: ${{ steps.metadata.outputs.zip_name }}
+    env:
+      CONFIGURATION: Release
+      PLATFORM: x64
+      WORKING_DIR: '${{ github.workspace }}'
+      ARTIFACTS_STAGING_DIR: '${{ github.workspace }}\artifacts'
+      APPX_PACKAGE_DIR: '${{ github.workspace }}\artifacts\AppxPackages\'
+      APP_PROJECT_PATH: 'src\Files.App\Files.App.csproj'
+      APPX_SELFSIGNED_CERT_PATH: '${{ github.workspace }}\.github\workflows\FilesApp_SelfSigned.pfx'
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v6
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Restore Files
+        shell: pwsh
+        run: |
+          msbuild Files.slnx `
+            -t:Restore `
+            -p:Platform=$env:PLATFORM `
+            -p:Configuration=$env:CONFIGURATION `
+            -p:PublishReadyToRun=true `
+            -v:quiet `
+            -clp:ErrorsOnly
+
+      - name: Create self-signed package certificate
+        shell: pwsh
+        run: ./.github/scripts/Generate-SelfCertPfx.ps1 -Destination "$env:APPX_SELFSIGNED_CERT_PATH"
+
+      - name: Build and package Files
+        shell: pwsh
+        run: |
+          msbuild $env:APP_PROJECT_PATH `
+            -t:Build `
+            -p:Configuration=$env:CONFIGURATION `
+            -p:Platform=$env:PLATFORM `
+            -p:AppxBundlePlatforms=$env:PLATFORM `
+            -p:AppxBundle=Always `
+            -p:GenerateAppxPackageOnBuild=true `
+            -p:UapAppxPackageBuildMode=SideloadOnly `
+            -p:AppxPackageDir=$env:APPX_PACKAGE_DIR `
+            -p:AppxPackageSigningEnabled=true `
+            -p:PackageCertificateKeyFile=$env:APPX_SELFSIGNED_CERT_PATH `
+            -p:PackageCertificatePassword="" `
+            -p:PackageCertificateThumbprint="" `
+            -v:quiet `
+            -clp:ErrorsOnly
+
+      - name: Prepare install package
+        id: metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $manifest = [xml](Get-Content "src\Files.App\Package.appxmanifest" -Raw)
+          $version = [string]$manifest.Package.Identity.Version
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Package version was not found in Package.appxmanifest."
+          }
+
+          $packagesRoot = Join-Path $env:ARTIFACTS_STAGING_DIR "AppxPackages"
+          $bundle = Get-ChildItem -Path $packagesRoot -Recurse -File -Filter "*.msixbundle" |
+            Select-Object -First 1
+          if (-not $bundle) {
+            throw "No .msixbundle was produced."
+          }
+
+          $pfxPassword = [System.Security.SecureString]::new()
+          $certificate = Import-PfxCertificate `
+            -FilePath $env:APPX_SELFSIGNED_CERT_PATH `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -Password $pfxPassword
+          if (-not $certificate) {
+            throw "Could not load the package signing certificate."
+          }
+          Export-Certificate `
+            -Cert $certificate `
+            -FilePath (Join-Path $env:ARTIFACTS_STAGING_DIR "FilesApp_SelfSigned.cer") `
+            -Type CERT | Out-Null
+          Remove-Item $env:APPX_SELFSIGNED_CERT_PATH -Force
+
+          [xml]$packageProps = Get-Content "Directory.Packages.props"
+          $sdkPackage = $packageProps.Project.ItemGroup.PackageVersion |
+            Where-Object { $_.Include -eq "Microsoft.WindowsAppSDK" } |
+            Select-Object -First 1
+          if (-not $sdkPackage) {
+            throw "Microsoft.WindowsAppSDK version was not found."
+          }
+          $sdkVersion = [string]$sdkPackage.Version
+          $sdkVersion | Set-Content `
+            -Path (Join-Path $env:ARTIFACTS_STAGING_DIR "windows-app-sdk-version.txt") `
+            -NoNewline
+
+          Get-ChildItem -Path $packagesRoot -Recurse -File |
+            Where-Object { $_.Extension -in @(".appxsym", ".msixupload") } |
+            Remove-Item -Force
+          Copy-Item ".github\scripts\Install-Files.ps1" $env:ARTIFACTS_STAGING_DIR
+
+          @"
+          Files Community fork build ($version), Windows x64.
+
+          This is an unofficial build signed with a per-build self-signed certificate.
+          Extract this archive, then run Install-Files.ps1 from an elevated PowerShell
+          window. The script installs the certificate and Windows App SDK runtime,
+          then installs Files and its package dependencies.
+          "@ | Set-Content -Path (Join-Path $env:ARTIFACTS_STAGING_DIR "README-INSTALL.txt")
+
+          $zipName = "Files-$version-Windows-x64.zip"
+          $zipPath = Join-Path $env:ARTIFACTS_STAGING_DIR $zipName
+          $archiveEntries = @(
+            $packagesRoot
+            (Join-Path $env:ARTIFACTS_STAGING_DIR "FilesApp_SelfSigned.cer")
+            (Join-Path $env:ARTIFACTS_STAGING_DIR "windows-app-sdk-version.txt")
+            (Join-Path $env:ARTIFACTS_STAGING_DIR "Install-Files.ps1")
+            (Join-Path $env:ARTIFACTS_STAGING_DIR "README-INSTALL.txt")
+          )
+          Compress-Archive -Path $archiveEntries -DestinationPath $zipPath -CompressionLevel Optimal
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+          "artifact_name=Files-Windows-x64-$version-run-$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+
+      - name: Upload install package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.metadata.outputs.artifact_name }}
+          path: ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.zip_name }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download install package artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release-assets
+
+      - name: Publish public prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: community-v${{ needs.build.outputs.version }}-build-${{ github.run_id }}-${{ github.run_attempt }}
+          RELEASE_TITLE: Files Community Build ${{ needs.build.outputs.version }} (Windows x64)
+          ZIP_NAME: ${{ needs.build.outputs.zip_name }}
+        run: |
+          gh release create "$RELEASE_TAG" "release-assets/$ZIP_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes "Unofficial Windows x64 build from this public fork. The ZIP includes an install script and a per-build self-signed certificate. Extract it and run Install-Files.ps1 from an elevated PowerShell window. This is not an official Files Community release." \
+            --prerelease
