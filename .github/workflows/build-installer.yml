@@ -195,9 +195,24 @@ jobs:
             throw "Microsoft.WindowsAppSDK version was not found."
           }
           $sdkVersion = [string]$sdkPackage.Version
-          $sdkVersion | Set-Content `
-            -Path (Join-Path $env:ARTIFACTS_STAGING_DIR "windows-app-sdk-version.txt") `
-            -NoNewline
+          if ($sdkVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
+            throw "Invalid Windows App SDK version: $sdkVersion"
+          }
+          $sdkMajorMinor = ($sdkVersion -split '\.')[0..1] -join '.'
+          $runtimeInstaller = Join-Path $env:ARTIFACTS_STAGING_DIR "WindowsAppRuntimeInstall-x64.exe"
+          $runtimeUri = "https://aka.ms/windowsappsdk/$sdkMajorMinor/$sdkVersion/windowsappruntimeinstall-x64.exe"
+          Invoke-WebRequest -Uri $runtimeUri -OutFile $runtimeInstaller
+          if (-not (Test-Path -Path $runtimeInstaller -PathType Leaf) -or
+              (Get-Item $runtimeInstaller).Length -eq 0) {
+            throw "The Windows App SDK runtime installer was not downloaded."
+          }
+          $runtimeSignature = Get-AuthenticodeSignature -FilePath $runtimeInstaller
+          if ($runtimeSignature.Status -ne "Valid" -or
+              $runtimeSignature.SignerCertificate.Subject -notmatch '(?i)(^|,\s*)O=Microsoft Corporation(,|$)') {
+            throw "The Windows App SDK runtime installer does not have a valid Microsoft signature."
+          }
+          $runtimeHash = (Get-FileHash $runtimeInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Output "Verified Microsoft-signed Windows App SDK $sdkVersion runtime installer (SHA-256 $runtimeHash)."
 
           Get-ChildItem -Path $packagesRoot -Recurse -File |
             Where-Object { $_.Extension -in @(".appxsym", ".msixupload") } |
@@ -224,6 +239,61 @@ jobs:
           if (-not (Test-Path $setup) -or (Get-Item $setup).Length -eq 0) {
             throw "The EXE installer was not produced."
           }
+
+      - name: Install EXE package on runner
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $setup = Join-Path $env:ARTIFACTS_STAGING_DIR "${{ steps.metadata.outputs.setup_name }}"
+          $logPath = Join-Path $env:TEMP "FilesCommunityInstall-$($env:APP_VERSION).log"
+          $arguments = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/SP-",
+            '/DIR="C:\Program Files\WindowsApps"',
+            "/TASKS=desktopicon"
+          )
+          $process = Start-Process `
+            -FilePath $setup `
+            -ArgumentList $arguments `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path $logPath) {
+              Get-Content $logPath
+            }
+            throw "The EXE installer failed on the Windows runner with exit code $($process.ExitCode)."
+          }
+
+          $installedPackage = Get-AppxPackage -Name "FilesDev" |
+            Where-Object { $_.PackageFamilyName -eq "FilesDev_ykqwq8d6ps0ag" } |
+            Select-Object -First 1
+          if (-not $installedPackage -or
+              $installedPackage.Status -ne "Ok" -or
+              $installedPackage.Version.ToString() -ne $env:APP_VERSION) {
+            if (Test-Path $logPath) {
+              Get-Content $logPath
+            }
+            throw "The EXE installer completed without registering the expected Files package."
+          }
+
+          $expectedLocation = [System.IO.Path]::GetFullPath("C:\Program Files\WindowsApps")
+          $installedLocation = [System.IO.Path]::GetFullPath($installedPackage.InstallLocation)
+          if (-not $installedLocation.StartsWith(
+              "$expectedLocation\",
+              [System.StringComparison]::OrdinalIgnoreCase
+          )) {
+            throw "Files was installed outside the selected WindowsApps volume."
+          }
+
+          $desktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "Files.lnk"
+          if (-not (Test-Path -Path $desktopShortcut -PathType Leaf)) {
+            throw "The installer did not create the requested desktop shortcut."
+          }
+          Write-Output "Verified Files $env:APP_VERSION installation and desktop shortcut on the Windows runner."
 
       - name: Upload install package artifact
         uses: actions/upload-artifact@v7
@@ -260,7 +330,7 @@ jobs:
           else
             RELEASE_TAG="community-v${{ needs.build.outputs.version }}-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           fi
-          NOTES="Unofficial Windows x64 build from this public fork. Download and run the Setup.exe as administrator. The installer provides a WindowsApps package-volume selection page and an optional desktop shortcut. Windows manages the final protected package directory inside the selected volume. The installer keeps PowerShell and runtime setup windows hidden and reports failures in the setup window with a diagnostic log path. The installer embeds the MSIX application package and its per-build self-signed certificate, then installs the Windows App SDK runtime and Files. The Setup.exe is not signed with the official Files Community signing identity. This is not an official Files Community release."
+          NOTES="Unofficial Windows x64 build from this public fork. Download and run the Setup.exe as administrator. The installer provides a WindowsApps package-volume selection page and an optional desktop shortcut. Windows manages the final protected package directory inside the selected volume. The installer keeps PowerShell and runtime setup windows hidden and reports failures in the setup window with a diagnostic log path. The installer embeds the MSIX application package, its per-build self-signed certificate, and the Microsoft-signed Windows App SDK runtime installer. The EXE installer has been installed and checked on a temporary Windows Actions runner before release publication. The Setup.exe is not signed with the official Files Community signing identity. This is not an official Files Community release."
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             ASSETS="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
             while IFS= read -r asset; do

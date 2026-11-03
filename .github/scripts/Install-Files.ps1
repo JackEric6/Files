@@ -22,13 +22,13 @@ try {
     $artifactRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
     $packagesRoot = Join-Path $artifactRoot "AppxPackages"
     $certificatePath = Join-Path $artifactRoot "FilesApp_SelfSigned.cer"
-    $sdkVersionPath = Join-Path $artifactRoot "windows-app-sdk-version.txt"
+    $runtimeInstaller = Join-Path $artifactRoot "WindowsAppRuntimeInstall-x64.exe"
 
     if (-not (Test-Path $certificatePath)) {
         throw "FilesApp_SelfSigned.cer was not found beside this script."
     }
-    if (-not (Test-Path $sdkVersionPath)) {
-        throw "windows-app-sdk-version.txt was not found beside this script."
+    if (-not (Test-Path -Path $runtimeInstaller -PathType Leaf)) {
+        throw "WindowsAppRuntimeInstall-x64.exe was not found beside this script."
     }
 
     $bundle = Get-ChildItem -Path $packagesRoot -Recurse -File -Filter "*.msixbundle" |
@@ -69,14 +69,6 @@ try {
         $certificate.Dispose()
     }
 
-    $sdkVersion = (Get-Content $sdkVersionPath -Raw).Trim()
-    if ($sdkVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
-        throw "Invalid Windows App SDK version: $sdkVersion"
-    }
-    $sdkMajorMinor = ($sdkVersion -split '\.')[0..1] -join '.'
-    $runtimeInstaller = Join-Path $env:TEMP "windowsappruntimeinstall-x64.exe"
-    $runtimeUri = "https://aka.ms/windowsappsdk/$sdkMajorMinor/$sdkVersion/windowsappruntimeinstall-x64.exe"
-    Invoke-WebRequest -Uri $runtimeUri -OutFile $runtimeInstaller
     $runtimeProcess = Start-Process `
         -FilePath $runtimeInstaller `
         -ArgumentList @("--quiet", "--force") `
