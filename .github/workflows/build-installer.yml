@@ -198,21 +198,9 @@ jobs:
           if ($sdkVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
             throw "Invalid Windows App SDK version: $sdkVersion"
           }
-          $sdkMajorMinor = ($sdkVersion -split '\.')[0..1] -join '.'
-          $runtimeInstaller = Join-Path $env:ARTIFACTS_STAGING_DIR "WindowsAppRuntimeInstall-x64.exe"
-          $runtimeUri = "https://aka.ms/windowsappsdk/$sdkMajorMinor/$sdkVersion/windowsappruntimeinstall-x64.exe"
-          Invoke-WebRequest -Uri $runtimeUri -OutFile $runtimeInstaller
-          if (-not (Test-Path -Path $runtimeInstaller -PathType Leaf) -or
-              (Get-Item $runtimeInstaller).Length -eq 0) {
-            throw "The Windows App SDK runtime installer was not downloaded."
-          }
-          $runtimeSignature = Get-AuthenticodeSignature -FilePath $runtimeInstaller
-          if ($runtimeSignature.Status -ne "Valid" -or
-              $runtimeSignature.SignerCertificate.Subject -notmatch '(?i)(^|,\s*)O=Microsoft Corporation(,|$)') {
-            throw "The Windows App SDK runtime installer does not have a valid Microsoft signature."
-          }
-          $runtimeHash = (Get-FileHash $runtimeInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
-          Write-Output "Verified Microsoft-signed Windows App SDK $sdkVersion runtime installer (SHA-256 $runtimeHash)."
+          $sdkVersion | Set-Content `
+            -Path (Join-Path $env:ARTIFACTS_STAGING_DIR "windows-app-sdk-version.txt") `
+            -NoNewline
 
           Get-ChildItem -Path $packagesRoot -Recurse -File |
             Where-Object { $_.Extension -in @(".appxsym", ".msixupload") } |
@@ -344,7 +332,7 @@ jobs:
           else
             RELEASE_TAG="community-v${{ needs.build.outputs.version }}-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           fi
-          NOTES="Unofficial Windows x64 build from this public fork. Download and run the Setup.exe as administrator. The installer provides a WindowsApps package-volume selection page and an optional desktop shortcut. Windows manages the final protected package directory inside the selected volume. The installer keeps PowerShell and runtime setup windows hidden and reports failures in the setup window with a diagnostic log path. The installer embeds the MSIX application package, its per-build self-signed certificate, and the Microsoft-signed Windows App SDK runtime installer. The EXE installer has been installed and checked on a temporary Windows Actions runner before release publication. The Setup.exe is not signed with the official Files Community signing identity. This is not an official Files Community release."
+          NOTES="Unofficial Windows x64 build from this public fork. Download and run the Setup.exe as administrator. The installer provides a WindowsApps package-volume selection page and an optional desktop shortcut. Windows manages the final protected package directory inside the selected volume. The installer checks for the required Windows App SDK runtime and skips its download when a compatible version is already installed; only otherwise does it download the Microsoft-signed runtime during installation. The runtime is not bundled into Setup.exe. PowerShell runs hidden and failures are reported in the setup window with a diagnostic log path. The EXE installer has been installed and checked on a temporary Windows Actions runner before release publication. The Setup.exe is not signed with the official Files Community signing identity. This is not an official Files Community release."
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             ASSETS="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
             while IFS= read -r asset; do

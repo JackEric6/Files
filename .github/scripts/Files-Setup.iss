@@ -49,7 +49,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#ArtifactsDir}\AppxPackages\*"; DestDir: "{tmp}\FilesInstaller\AppxPackages"; Flags: ignoreversion recursesubdirs createallsubdirs deleteafterinstall
 Source: "{#ArtifactsDir}\Install-Files.ps1"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall
 Source: "{#ArtifactsDir}\FilesApp_SelfSigned.cer"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall
-Source: "{#ArtifactsDir}\WindowsAppRuntimeInstall-x64.exe"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall
+Source: "{#ArtifactsDir}\windows-app-sdk-version.txt"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall
 
 [Icons]
 Name: "{autodesktop}\Files"; Filename: "{sys}\explorer.exe"; Parameters: "shell:AppsFolder\FilesDev_ykqwq8d6ps0ag!App"; AppUserModelID: "FilesDev_ykqwq8d6ps0ag!App"; Tasks: desktopicon
