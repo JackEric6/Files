@@ -55,17 +55,28 @@ try {
     }
 
     $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certificatePath)
+    $trustedPeopleStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+        "TrustedPeople",
+        [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine
+    )
     try {
-        $trustedCertificate = Get-ChildItem Cert:\LocalMachine\TrustedPeople |
-            Where-Object { $_.Thumbprint -eq $certificate.Thumbprint } |
-            Select-Object -First 1
-        if (-not $trustedCertificate) {
-            Import-Certificate `
-                -FilePath $certificatePath `
-                -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+        $trustedPeopleStore.Open(
+            [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite
+        )
+        $certificateIsTrusted = $false
+        foreach ($trustedCertificate in $trustedPeopleStore.Certificates) {
+            if ($trustedCertificate.Thumbprint -eq $certificate.Thumbprint) {
+                $certificateIsTrusted = $true
+                break
+            }
+        }
+        if (-not $certificateIsTrusted) {
+            $trustedPeopleStore.Add($certificate)
         }
     }
     finally {
+        $trustedPeopleStore.Close()
+        $trustedPeopleStore.Dispose()
         $certificate.Dispose()
     }
 
