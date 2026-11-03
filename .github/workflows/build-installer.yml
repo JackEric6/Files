@@ -86,6 +86,19 @@ jobs:
           if (-not (Test-Path $compiler)) {
             throw "Inno Setup compiler was not found."
           }
+          $languagePath = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\Languages\Unofficial\ChineseSimplified.isl"
+          $languageDirectory = Split-Path $languagePath -Parent
+          New-Item -ItemType Directory -Path $languageDirectory -Force | Out-Null
+          $languageDownload = Join-Path $env:TEMP "ChineseSimplified.isl"
+          Invoke-WebRequest `
+            -Uri "https://raw.githubusercontent.com/jrsoftware/issrc/c2913c993858a781fcb455bac8b8949c1c366cb8/Files/Languages/Unofficial/ChineseSimplified.isl" `
+            -OutFile $languageDownload
+          $expectedLanguageHash = "7d544b9bb1d142cfa11f2e5d3cc8abe2e55f8e066c5124e3772675aa236e1278"
+          $actualLanguageHash = (Get-FileHash $languageDownload -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualLanguageHash -ne $expectedLanguageHash) {
+            throw "Inno Setup Chinese language file SHA-256 mismatch."
+          }
+          Copy-Item $languageDownload $languagePath -Force
           "INNO_SETUP_COMPILER=$compiler" >> $env:GITHUB_ENV
 
       - name: Restore Files
