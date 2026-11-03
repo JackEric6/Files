@@ -1,66 +1,148 @@
-$ErrorActionPreference = "Stop"
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackageVolumePath,
 
-$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-$principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
-if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "Run this script from an elevated PowerShell window."
-}
-
-$artifactRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$packagesRoot = Join-Path $artifactRoot "AppxPackages"
-$certificatePath = Join-Path $artifactRoot "FilesApp_SelfSigned.cer"
-$sdkVersionPath = Join-Path $artifactRoot "windows-app-sdk-version.txt"
-
-if (-not (Test-Path $certificatePath)) {
-    throw "FilesApp_SelfSigned.cer was not found beside this script."
-}
-if (-not (Test-Path $sdkVersionPath)) {
-    throw "windows-app-sdk-version.txt was not found beside this script."
-}
-
-$bundle = Get-ChildItem -Path $packagesRoot -Recurse -File -Filter "*.msixbundle" |
-    Select-Object -First 1
-if (-not $bundle) {
-    throw "No .msixbundle was found under AppxPackages."
-}
-
-$certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certificatePath)
-$trustedCertificate = Get-ChildItem Cert:\LocalMachine\TrustedPeople |
-    Where-Object { $_.Thumbprint -eq $certificate.Thumbprint } |
-    Select-Object -First 1
-if (-not $trustedCertificate) {
-    Import-Certificate `
-        -FilePath $certificatePath `
-        -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
-}
-$certificate.Dispose()
-
-$sdkVersion = (Get-Content $sdkVersionPath -Raw).Trim()
-if ($sdkVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
-    throw "Invalid Windows App SDK version: $sdkVersion"
-}
-$sdkMajorMinor = ($sdkVersion -split '\.')[0..1] -join '.'
-$runtimeInstaller = Join-Path $env:TEMP "windowsappruntimeinstall-x64.exe"
-$runtimeUri = "https://aka.ms/windowsappsdk/$sdkMajorMinor/$sdkVersion/windowsappruntimeinstall-x64.exe"
-Invoke-WebRequest -Uri $runtimeUri -OutFile $runtimeInstaller
-$runtimeProcess = Start-Process `
-    -FilePath $runtimeInstaller `
-    -ArgumentList "--quiet", "--force" `
-    -Wait `
-    -PassThru
-if ($runtimeProcess.ExitCode -notin @(0, 3010)) {
-    throw "Windows App SDK runtime installation failed with exit code $($runtimeProcess.ExitCode)."
-}
-
-$dependencies = @(
-    Get-ChildItem -Path $packagesRoot -Recurse -File -Include *.appx, *.msix |
-        Where-Object { $_.FullName -match '[\\/]Dependencies[\\/]x64[\\/]' } |
-        ForEach-Object { $_.FullName }
+    [Parameter(Mandatory = $true)]
+    [string]$LogPath
 )
-if ($dependencies.Count -gt 0) {
-    Add-AppxPackage -Path $bundle.FullName -DependencyPath $dependencies
-} else {
-    Add-AppxPackage -Path $bundle.FullName
-}
 
-Write-Host "Files was installed successfully."
+$ErrorActionPreference = "Stop"
+$transcriptStarted = $false
+
+try {
+    Start-Transcript -Path $LogPath -Force | Out-Null
+    $transcriptStarted = $true
+
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
+    if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "Run this installer as an administrator."
+    }
+
+    $artifactRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $packagesRoot = Join-Path $artifactRoot "AppxPackages"
+    $certificatePath = Join-Path $artifactRoot "FilesApp_SelfSigned.cer"
+    $sdkVersionPath = Join-Path $artifactRoot "windows-app-sdk-version.txt"
+
+    if (-not (Test-Path $certificatePath)) {
+        throw "FilesApp_SelfSigned.cer was not found beside this script."
+    }
+    if (-not (Test-Path $sdkVersionPath)) {
+        throw "windows-app-sdk-version.txt was not found beside this script."
+    }
+
+    $bundle = Get-ChildItem -Path $packagesRoot -Recurse -File -Filter "*.msixbundle" |
+        Select-Object -First 1
+    if (-not $bundle) {
+        throw "No .msixbundle was found under AppxPackages."
+    }
+
+    $PackageVolumePath = [System.IO.Path]::GetFullPath($PackageVolumePath).TrimEnd("\")
+    if ((Split-Path -Leaf $PackageVolumePath) -ne "WindowsApps") {
+        throw "The package location must end with the WindowsApps directory."
+    }
+
+    $volume = Get-AppxVolume |
+        Where-Object {
+            [System.IO.Path]::GetFullPath($_.PackageStorePath).TrimEnd("\") -ieq $PackageVolumePath
+        } |
+        Select-Object -First 1
+    if (-not $volume) {
+        if ($PackageVolumePath -notmatch '^[A-Za-z]:\\WindowsApps$') {
+            throw "A new package volume must use a drive root such as D:\WindowsApps."
+        }
+        $volume = Add-AppxVolume -Path $PackageVolumePath
+    }
+
+    $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certificatePath)
+    try {
+        $trustedCertificate = Get-ChildItem Cert:\LocalMachine\TrustedPeople |
+            Where-Object { $_.Thumbprint -eq $certificate.Thumbprint } |
+            Select-Object -First 1
+        if (-not $trustedCertificate) {
+            Import-Certificate `
+                -FilePath $certificatePath `
+                -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+        }
+    }
+    finally {
+        $certificate.Dispose()
+    }
+
+    $sdkVersion = (Get-Content $sdkVersionPath -Raw).Trim()
+    if ($sdkVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
+        throw "Invalid Windows App SDK version: $sdkVersion"
+    }
+    $sdkMajorMinor = ($sdkVersion -split '\.')[0..1] -join '.'
+    $runtimeInstaller = Join-Path $env:TEMP "windowsappruntimeinstall-x64.exe"
+    $runtimeUri = "https://aka.ms/windowsappsdk/$sdkMajorMinor/$sdkVersion/windowsappruntimeinstall-x64.exe"
+    Invoke-WebRequest -Uri $runtimeUri -OutFile $runtimeInstaller
+    $runtimeProcess = Start-Process `
+        -FilePath $runtimeInstaller `
+        -ArgumentList @("--quiet", "--force") `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    if ($runtimeProcess.ExitCode -notin @(0, 3010)) {
+        throw "Windows App SDK runtime installation failed with exit code $($runtimeProcess.ExitCode)."
+    }
+
+    $dependencies = @(
+        Get-ChildItem -Path $packagesRoot -Recurse -File -Include *.appx, *.msix |
+            Where-Object { $_.FullName -match '[\\/]Dependencies[\\/]x64[\\/]' } |
+            ForEach-Object { $_.FullName }
+    )
+    $packageArguments = @{
+        Path                     = $bundle.FullName
+        Volume                   = $volume
+        ForceUpdateFromAnyVersion = $true
+        ErrorAction              = "Stop"
+    }
+    if ($dependencies.Count -gt 0) {
+        $packageArguments.DependencyPath = $dependencies
+    }
+
+    $existingPackage = Get-AppxPackage -Name "FilesDev" |
+        Where-Object { $_.PackageFamilyName -eq "FilesDev_ykqwq8d6ps0ag" } |
+        Select-Object -First 1
+    if ($existingPackage) {
+        $existingLocation = [System.IO.Path]::GetFullPath($existingPackage.InstallLocation)
+        if (-not $existingLocation.StartsWith(
+            "$PackageVolumePath\",
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+            Move-AppxPackage `
+                -Package $existingPackage.PackageFullName `
+                -Volume $volume
+        }
+    }
+
+    Add-AppxPackage @packageArguments
+
+    $installedPackage = Get-AppxPackage -Name "FilesDev" |
+        Where-Object { $_.PackageFamilyName -eq "FilesDev_ykqwq8d6ps0ag" } |
+        Select-Object -First 1
+    if (-not $installedPackage -or $installedPackage.Status -ne "Ok") {
+        throw "Windows did not register the Files package successfully."
+    }
+    $installedLocation = [System.IO.Path]::GetFullPath($installedPackage.InstallLocation)
+    if (-not $installedLocation.StartsWith(
+        "$PackageVolumePath\",
+        [System.StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "Files was not installed to the selected package location."
+    }
+
+    Write-Output "Files was installed successfully."
+    Stop-Transcript | Out-Null
+    $transcriptStarted = $false
+    exit 0
+}
+catch {
+    Write-Output ($_ | Out-String)
+    if ($transcriptStarted) {
+        Stop-Transcript | Out-Null
+        $transcriptStarted = $false
+    }
+    exit 1
+}

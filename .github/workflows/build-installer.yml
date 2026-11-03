@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/scripts/Install-Files.ps1'
       - '.github/scripts/Files-Setup.iss'
+      - '.github/scripts/Generate-SelfCertPfx.ps1'
       - '.github/workflows/build-installer.yml'
       - 'Directory.Packages.props'
       - 'Files.slnx'
@@ -246,7 +247,7 @@ jobs:
           else
             RELEASE_TAG="community-v${{ needs.build.outputs.version }}-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           fi
-          NOTES="Unofficial Windows x64 build from this public fork. Download and run the Setup.exe as administrator. The installer embeds the MSIX application package and its per-build self-signed certificate, then installs the Windows App SDK runtime and Files. The Setup.exe is not signed with the official Files Community signing identity. This is not an official Files Community release."
+          NOTES="Unofficial Windows x64 build from this public fork. Download and run the Setup.exe as administrator. The installer provides a WindowsApps package-volume selection page and an optional desktop shortcut. Windows manages the final protected package directory inside the selected volume. The installer keeps PowerShell and runtime setup windows hidden and reports failures in the setup window with a diagnostic log path. The installer embeds the MSIX application package and its per-build self-signed certificate, then installs the Windows App SDK runtime and Files. The Setup.exe is not signed with the official Files Community signing identity. This is not an official Files Community release."
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             ASSETS="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
             while IFS= read -r asset; do
