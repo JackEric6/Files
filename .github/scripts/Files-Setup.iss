@@ -52,7 +52,7 @@ Source: "{#ArtifactsDir}\FilesApp_SelfSigned.cer"; DestDir: "{tmp}\FilesInstalle
 Source: "{#ArtifactsDir}\WindowsAppRuntimeInstall-x64.exe"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall
 
 [Icons]
-Name: "{autodesktop}\Files.lnk"; Filename: "{sys}\explorer.exe"; Parameters: "shell:AppsFolder\FilesDev_ykqwq8d6ps0ag!App"; AppUserModelID: "FilesDev_ykqwq8d6ps0ag!App"; Tasks: desktopicon
+Name: "{autodesktop}\Files"; Filename: "{sys}\explorer.exe"; Parameters: "shell:AppsFolder\FilesDev_ykqwq8d6ps0ag!App"; AppUserModelID: "FilesDev_ykqwq8d6ps0ag!App"; Tasks: desktopicon
 
 [Code]
 function NextButtonClick(CurPageID: Integer): Boolean;
