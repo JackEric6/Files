@@ -289,11 +289,18 @@ jobs:
             throw "Files was installed outside the selected WindowsApps volume."
           }
 
-          $desktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "Files.lnk"
-          if (-not (Test-Path -Path $desktopShortcut -PathType Leaf)) {
+          $desktopDirectories = @(
+            [Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
+            [Environment]::GetFolderPath([System.Environment+SpecialFolder]::CommonDesktopDirectory)
+          ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          $desktopShortcut = $desktopDirectories |
+            ForEach-Object { Join-Path $_ "Files.lnk" } |
+            Where-Object { Test-Path -Path $_ -PathType Leaf } |
+            Select-Object -First 1
+          if (-not $desktopShortcut) {
             throw "The installer did not create the requested desktop shortcut."
           }
-          Write-Output "Verified Files $env:APP_VERSION installation and desktop shortcut on the Windows runner."
+          Write-Output "Verified Files $env:APP_VERSION installation and desktop shortcut at $desktopShortcut on the Windows runner."
 
       - name: Upload install package artifact
         uses: actions/upload-artifact@v7
