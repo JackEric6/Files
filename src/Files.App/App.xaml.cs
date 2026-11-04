@@ -108,8 +108,9 @@ namespace Files.App
 				TraceStartup("ActivateAsync: enter");
 				var startup = Stopwatch.StartNew();
 				var appActivationArguments = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs();
-				TraceStartup($"ActivateAsync: activation arguments read ({appActivationArguments.Data?.GetType().FullName ?? "null"})");
-				var isStartupTask = appActivationArguments.Data is Windows.ApplicationModel.Activation.IStartupTaskActivatedEventArgs;
+				var launchData = appActivationArguments.Data;
+				TraceStartup($"ActivateAsync: activation arguments read ({launchData?.GetType().FullName ?? "null"})");
+				var isStartupTask = launchData is Windows.ApplicationModel.Activation.IStartupTaskActivatedEventArgs;
 
 				// Build the DI container off-thread while the window initializes
 				var appModel = AppModel;
@@ -239,7 +240,7 @@ namespace Files.App
 					: Task.Run(AppLifecycleHelper.ConfigureSentry);
 
 
-				Logger.LogInformation($"App launched. Launch args type: {appActivationArguments.Data.GetType().Name}");
+				Logger.LogInformation($"App launched. Launch args type: {launchData?.GetType().Name ?? "null"}");
 
 				if (SplashScreenLoadingTCS is not null)
 				{
@@ -251,7 +252,7 @@ namespace Files.App
 				_ = SafetyExtensions.IgnoreExceptions(async () =>
 				{
 					await ServerSession;
-					await MainWindow.Instance.InitializeApplicationAsync(appActivationArguments.Data);
+					await MainWindow.Instance.InitializeApplicationAsync(launchData);
 				}, Logger);
 
 				await telemetryInitialization;
