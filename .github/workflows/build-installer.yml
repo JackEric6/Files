@@ -36,6 +36,7 @@ jobs:
       artifact_name: ${{ steps.metadata.outputs.artifact_name }}
       version: ${{ steps.metadata.outputs.version }}
       setup_name: ${{ steps.metadata.outputs.setup_name }}
+      bundle_name: ${{ steps.metadata.outputs.bundle_name }}
     env:
       CONFIGURATION: Release
       PLATFORM: x64
@@ -172,6 +173,8 @@ jobs:
           if (-not $bundle) {
             throw "No .msixbundle was produced."
           }
+          $bundleName = "Files.App_${version}_x64.msixbundle"
+          Copy-Item $bundle.FullName (Join-Path $env:ARTIFACTS_STAGING_DIR $bundleName)
 
           $pfxPassword = [System.Security.SecureString]::new()
           $certificate = Import-PfxCertificate `
@@ -187,21 +190,6 @@ jobs:
             -Type CERT | Out-Null
           Remove-Item $env:APPX_SELFSIGNED_CERT_PATH -Force
 
-          [xml]$packageProps = Get-Content "Directory.Packages.props"
-          $sdkPackage = $packageProps.Project.ItemGroup.PackageVersion |
-            Where-Object { $_.Include -eq "Microsoft.WindowsAppSDK" } |
-            Select-Object -First 1
-          if (-not $sdkPackage) {
-            throw "Microsoft.WindowsAppSDK version was not found."
-          }
-          $sdkVersion = [string]$sdkPackage.Version
-          if ($sdkVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
-            throw "Invalid Windows App SDK version: $sdkVersion"
-          }
-          $sdkVersion | Set-Content `
-            -Path (Join-Path $env:ARTIFACTS_STAGING_DIR "windows-app-sdk-version.txt") `
-            -NoNewline
-
           Get-ChildItem -Path $packagesRoot -Recurse -File |
             Where-Object { $_.Extension -in @(".appxsym", ".msixupload") } |
             Remove-Item -Force
@@ -211,6 +199,7 @@ jobs:
 
           "version=$version" >> $env:GITHUB_OUTPUT
           "setup_name=$setupName" >> $env:GITHUB_OUTPUT
+          "bundle_name=$bundleName" >> $env:GITHUB_OUTPUT
           "artifact_name=Files-Windows-x64-$version-run-$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
 
       - name: Build EXE installer
@@ -228,12 +217,39 @@ jobs:
             throw "The EXE installer was not produced."
           }
 
-      - name: Install EXE package on runner
+      - name: Install EXE package without Windows App SDK Framework
         shell: pwsh
         env:
           APP_VERSION: ${{ steps.metadata.outputs.version }}
         run: |
           $ErrorActionPreference = "Stop"
+          $runtimePackages = @(
+            Get-AppxPackage |
+              Where-Object {
+                $_.Name -like "Microsoft.WindowsAppRuntime.*" -or
+                $_.Name -like "MicrosoftCorporationII.WinAppRuntime.*" -or
+                $_.Name -like "Microsoft.WinAppRuntime.DDLM.*"
+              }
+          )
+          foreach ($runtimePackage in $runtimePackages) {
+            Remove-AppxPackage `
+              -Package $runtimePackage.PackageFullName `
+              -Confirm:$false `
+              -ErrorAction Stop
+          }
+          $remainingRuntimePackages = @(
+            Get-AppxPackage |
+              Where-Object {
+                $_.Name -like "Microsoft.WindowsAppRuntime.*" -or
+                $_.Name -like "MicrosoftCorporationII.WinAppRuntime.*" -or
+                $_.Name -like "Microsoft.WinAppRuntime.DDLM.*"
+              }
+          )
+          if ($remainingRuntimePackages.Count -gt 0) {
+            throw "The Windows runner still has a Windows App SDK Framework package registered; cannot verify self-contained installation."
+          }
+          Write-Output "Verified the runner user has no Windows App SDK Framework packages before installation."
+
           $setup = Join-Path $env:ARTIFACTS_STAGING_DIR "${{ steps.metadata.outputs.setup_name }}"
           $logPath = Join-Path $env:TEMP "FilesCommunityInstall-$($env:APP_VERSION).log"
           $setupLogPath = Join-Path $env:TEMP "FilesSetup-$($env:APP_VERSION).log"
@@ -269,6 +285,17 @@ jobs:
             }
             throw "The EXE installer completed without registering the expected Files package."
           }
+          $runtimePackages = @(
+            Get-AppxPackage |
+              Where-Object {
+                $_.Name -like "Microsoft.WindowsAppRuntime.*" -or
+                $_.Name -like "MicrosoftCorporationII.WinAppRuntime.*" -or
+                $_.Name -like "Microsoft.WinAppRuntime.DDLM.*"
+              }
+          )
+          if ($runtimePackages.Count -gt 0) {
+            throw "Files installation unexpectedly registered Windows App SDK Framework packages."
+          }
 
           $expectedLocation = [System.IO.Path]::GetFullPath("C:\Program Files\WindowsApps")
           $installedLocation = [System.IO.Path]::GetFullPath($installedPackage.InstallLocation)
@@ -297,11 +324,59 @@ jobs:
           }
           Write-Output "Verified Files $env:APP_VERSION installation and desktop shortcut at $desktopShortcut on the Windows runner."
 
+          $launchStartedAt = Get-Date
+          $appUserModelId = "FilesDev_ykqwq8d6ps0ag!App"
+          Start-Process `
+            -FilePath (Join-Path $env:WINDIR "explorer.exe") `
+            -ArgumentList "shell:AppsFolder\$appUserModelId"
+          $launchDeadline = (Get-Date).AddSeconds(90)
+          $appProcess = $null
+          do {
+            $appProcess = Get-Process -Name "Files" -ErrorAction SilentlyContinue |
+              Where-Object { $_.StartTime -ge $launchStartedAt } |
+              Sort-Object StartTime -Descending |
+              Select-Object -First 1
+            if ($appProcess) {
+              $appProcess.Refresh()
+              if ($appProcess.MainWindowHandle -ne [IntPtr]::Zero -and $appProcess.Responding) {
+                break
+              }
+            }
+            Start-Sleep -Seconds 1
+          } while ((Get-Date) -lt $launchDeadline)
+
+          if (-not $appProcess -or
+              $appProcess.MainWindowHandle -eq [IntPtr]::Zero -or
+              -not $appProcess.Responding) {
+            Get-WinEvent `
+              -FilterHashtable @{ LogName = "Application"; StartTime = $launchStartedAt } `
+              -ErrorAction SilentlyContinue |
+              Where-Object { $_.Message -match "Files\.exe|FilesDev|WindowsAppRuntime" } |
+              Select-Object -First 15 TimeCreated, Id, ProviderName, Message |
+              Format-List
+            throw "Files did not open a responsive main window within 90 seconds."
+          }
+
+          $appProcessId = $appProcess.Id
+          Start-Sleep -Seconds 10
+          $appProcess = Get-Process -Id $appProcessId -ErrorAction SilentlyContinue
+          if (-not $appProcess) {
+            throw "Files exited within 10 seconds of launch."
+          }
+          $appProcess.Refresh()
+          if ($appProcess.MainWindowHandle -eq [IntPtr]::Zero -or -not $appProcess.Responding) {
+            throw "Files stopped responding within 10 seconds of launch."
+          }
+          Write-Output "Verified Files $env:APP_VERSION opened a responsive main window and stayed responsive for 10 seconds."
+
       - name: Upload install package artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.metadata.outputs.artifact_name }}
-          path: ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.setup_name }}
+          path: |
+            ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.setup_name }}
+            ${{ env.ARTIFACTS_STAGING_DIR }}\${{ steps.metadata.outputs.bundle_name }}
+            ${{ env.ARTIFACTS_STAGING_DIR }}\FilesApp_SelfSigned.cer
           if-no-files-found: error
           retention-days: 1
 
@@ -325,6 +400,7 @@ jobs:
           RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
           RELEASE_TITLE: Files Community Build ${{ needs.build.outputs.version }} (Windows x64)
           SETUP_NAME: ${{ needs.build.outputs.setup_name }}
+          BUNDLE_NAME: ${{ needs.build.outputs.bundle_name }}
         run: |
           set -euo pipefail
           if [[ -n "$RELEASE_TAG_INPUT" ]]; then
@@ -332,7 +408,20 @@ jobs:
           else
             RELEASE_TAG="community-v${{ needs.build.outputs.version }}-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           fi
-          NOTES="Unofficial Windows x64 build from this public fork. Download and run the Setup.exe as administrator. The installer provides a WindowsApps package-volume selection page and an optional desktop shortcut. Windows manages the final protected package directory inside the selected volume. The installer checks for the required Windows App SDK runtime and skips its download when a compatible version is already installed; only otherwise does it download the Microsoft-signed runtime during installation. The runtime is not bundled into Setup.exe. PowerShell runs hidden and failures are reported in the setup window with a diagnostic log path. The EXE installer has been installed and checked on a temporary Windows Actions runner before release publication. The Setup.exe is not signed with the official Files Community signing identity. This is not an official Files Community release."
+          NOTES="$(printf '%s\n' \
+            '这是基于 Files Community 源码构建的非官方 Windows x64 版本，不代表官方发行。' \
+            '' \
+            '### 修改说明' \
+            '- 改为 Windows App SDK 自包含部署：Framework 运行时随 Files 应用包部署，不需要预装或单独安装 Windows App SDK Framework 包。' \
+            '- 保留 MSIX 应用身份，继续支持 Files 的 Windows 文件关联、协议和 Shell 集成。' \
+            '- 改进安装结束阶段：显示部署状态，部署超时或失败时明确报错并保留诊断日志。' \
+            '- 安装完成页提供启动选项；通过原始用户上下文启动 Files，避免继承安装器管理员权限。' \
+            '- 发布门槛增加无 Windows App SDK Framework 的 Windows Actions 临时环境安装、桌面快捷方式、启动及持续响应检查。' \
+            '' \
+            '### 安装' \
+            '- 推荐下载 Setup.exe，以管理员身份运行；可选择 WindowsApps 包卷并勾选桌面快捷方式。' \
+            '- 同时提供 MSIX Bundle 和自签名证书，直接安装 Bundle 前需信任该证书。' \
+            '- Setup.exe 未使用 Files Community 官方签名；本版本不是官方 Files Community Release。')"
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             ASSETS="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
             while IFS= read -r asset; do
@@ -341,7 +430,10 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" \
                 --yes
             done <<< "$ASSETS"
-            gh release upload "$RELEASE_TAG" "release-assets/$SETUP_NAME" \
+            gh release upload "$RELEASE_TAG" \
+              "release-assets/$SETUP_NAME" \
+              "release-assets/$BUNDLE_NAME" \
+              "release-assets/FilesApp_SelfSigned.cer" \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
             gh release edit "$RELEASE_TAG" \
@@ -350,7 +442,10 @@ jobs:
               --notes "$NOTES" \
               --prerelease
           else
-            gh release create "$RELEASE_TAG" "release-assets/$SETUP_NAME" \
+            gh release create "$RELEASE_TAG" \
+              "release-assets/$SETUP_NAME" \
+              "release-assets/$BUNDLE_NAME" \
+              "release-assets/FilesApp_SelfSigned.cer" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "$RELEASE_TITLE" \

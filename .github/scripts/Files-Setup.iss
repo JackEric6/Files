@@ -33,14 +33,16 @@ english.AdditionalOptions=Additional options:
 english.CreateDesktopIcon=Create a desktop shortcut
 english.InvalidPackageLocation=Choose the registered package volume C:\Program Files\WindowsApps or a drive-root volume such as D:\WindowsApps. A new volume cannot be nested under another folder.
 english.InstallationFailed=Files could not be installed. Details were saved to:
-english.InstallingFiles=Installing Files...
+english.InstallingFiles=Installing Files. The first install may take a few minutes...
 english.ScriptStartFailed=The Files installation could not be started.
+english.LaunchFiles=Launch Files
 chinesesimp.AdditionalOptions=其他选项:
 chinesesimp.CreateDesktopIcon=创建桌面快捷方式
 chinesesimp.InvalidPackageLocation=请选择已注册的应用包卷（例如 C:\Program Files\WindowsApps、D:\WindowsApps），或磁盘根目录下的新卷（例如 E:\WindowsApps）。新卷不能放在其他文件夹内。
 chinesesimp.InstallationFailed=Files 安装失败。详细信息已保存到：
-chinesesimp.InstallingFiles=正在安装 Files...
+chinesesimp.InstallingFiles=正在安装 Files。首次安装可能需要几分钟...
 chinesesimp.ScriptStartFailed=无法启动 Files 安装过程。
+chinesesimp.LaunchFiles=启动 Files
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalOptions}"; Flags: checkedonce
@@ -48,11 +50,13 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#ArtifactsDir}\AppxPackages\*"; DestDir: "{tmp}\FilesInstaller\AppxPackages"; Flags: ignoreversion recursesubdirs createallsubdirs deleteafterinstall
 Source: "{#ArtifactsDir}\Install-Files.ps1"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall
-Source: "{#ArtifactsDir}\FilesApp_SelfSigned.cer"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall
-Source: "{#ArtifactsDir}\windows-app-sdk-version.txt"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall
+Source: "{#ArtifactsDir}\FilesApp_SelfSigned.cer"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall; AfterInstall: InstallFilesPackage
 
 [Icons]
 Name: "{autodesktop}\Files"; Filename: "{sys}\explorer.exe"; Parameters: "shell:AppsFolder\FilesDev_ykqwq8d6ps0ag!App"; AppUserModelID: "FilesDev_ykqwq8d6ps0ag!App"; Tasks: desktopicon
+
+[Run]
+Filename: "{sys}\explorer.exe"; Parameters: "shell:AppsFolder\FilesDev_ykqwq8d6ps0ag!App"; Description: "{cm:LaunchFiles}"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [Code]
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -90,7 +94,22 @@ begin
   end;
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
+procedure OnInstallOutput(const S: String; const Error, FirstLine: Boolean);
+var
+  StatusText: String;
+begin
+  Log(S);
+  StatusText := Trim(S);
+  if StatusText <> '' then
+  begin
+    if Length(StatusText) > 110 then
+      StatusText := Copy(StatusText, 1, 110);
+    WizardForm.StatusLabel.Caption := StatusText;
+    WizardForm.Update;
+  end;
+end;
+
+procedure InstallFilesPackage();
 var
   PowerShellPath: String;
   ScriptPath: String;
@@ -99,10 +118,10 @@ var
   Parameters: String;
   ResultCode: Integer;
 begin
-  if CurStep = ssPostInstall then
-  begin
-    WizardForm.StatusLabel.Caption := ExpandConstant('{cm:InstallingFiles}');
-    WizardForm.Update;
+  WizardForm.StatusLabel.Caption := ExpandConstant('{cm:InstallingFiles}');
+  WizardForm.ProgressGauge.Style := npbstMarquee;
+  WizardForm.Update;
+  try
     PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
     ScriptPath := ExpandConstant('{tmp}\FilesInstaller\Install-Files.ps1');
     PackageVolumePath := WizardDirValue;
@@ -112,16 +131,20 @@ begin
       '-File "' + ScriptPath + '" ' +
       '-PackageVolumePath "' + PackageVolumePath + '" ' +
       '-LogPath "' + LogPath + '"';
-    if not Exec(
+    if not ExecAndLogOutput(
       PowerShellPath,
       Parameters,
       ExpandConstant('{tmp}\FilesInstaller'),
       SW_HIDE,
       ewWaitUntilTerminated,
-      ResultCode) then
+      ResultCode,
+      @OnInstallOutput) then
       RaiseException(ExpandConstant('{cm:ScriptStartFailed}'));
     if ResultCode <> 0 then
       RaiseException(
         ExpandConstant('{cm:InstallationFailed}') + #13#10 + LogPath);
+  finally
+    WizardForm.ProgressGauge.Style := npbstNormal;
+    WizardForm.Update;
   end;
 end;

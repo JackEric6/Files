@@ -5,6 +5,7 @@
         <EnableMsixTooling>true</EnableMsixTooling>
         <PublishProfile>Properties\PublishProfiles\win-$(Platform).pubxml</PublishProfile>
         <TargetFramework>$(WindowsTargetFramework)</TargetFramework>
+        <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
         <OutputType>WinExe</OutputType>
         <AssemblyName>Files</AssemblyName>
         <DefaultLanguage>en-US</DefaultLanguage>
