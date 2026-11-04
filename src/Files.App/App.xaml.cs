@@ -146,7 +146,7 @@ namespace Files.App
 					}
 					catch (Exception ex)
 					{
-						TraceStartup($"Services: task failed ({ex.GetType().FullName}, HRESULT 0x{ex.HResult:X8})");
+						TraceStartup($"Services: task failed ({ex})");
 						// A UI-thread-only service ctor failed off-thread; rebuilt on the UI thread below
 						return null;
 					}
@@ -171,9 +171,17 @@ namespace Files.App
 				if (serviceProvider is null)
 				{
 					TraceStartup("ActivateAsync: rebuilding service provider on UI thread");
-					serviceProvider = AppLifecycleHelper.ConfigureHost(appModel);
-					Ioc.Default.ConfigureServices(serviceProvider);
-					TraceStartup("ActivateAsync: service provider rebuilt");
+					try
+					{
+						serviceProvider = AppLifecycleHelper.ConfigureHost(appModel);
+						Ioc.Default.ConfigureServices(serviceProvider);
+						TraceStartup("ActivateAsync: service provider rebuilt");
+					}
+					catch (Exception ex)
+					{
+						TraceStartup($"ActivateAsync: service provider rebuild failed ({ex})");
+						throw;
+					}
 				}
 
 				TraceStartup("ActivateAsync: resolving user settings");
