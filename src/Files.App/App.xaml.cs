@@ -122,24 +122,28 @@ namespace Files.App
 						TraceStartup("Services: ConfigureHost starting");
 						var provider = AppLifecycleHelper.ConfigureHost(appModel);
 						TraceStartup("Services: ConfigureHost completed");
-
-						// Configure Ioc here so Ioc.Default-dependent constructions warm off-thread too
-						Ioc.Default.ConfigureServices(provider);
 						TraceStartup("Services: resolving file tags");
 						_ = provider.GetRequiredService<IFileTagsSettingsService>();
 						TraceStartup("Services: file tags ready");
 
 						// Load the appearance settings needed for the first frame off the UI thread.
-						if (isStartupTask && provider.GetRequiredService<IGeneralSettingsService>().CloseToBackground)
+						var closeToBackground = isStartupTask && provider.GetRequiredService<IGeneralSettingsService>().CloseToBackground;
+						if (closeToBackground)
 						{
 							TraceStartup("Services: startup task will close to background");
-							return provider;
 						}
-						TraceStartup("Services: resolving appearance settings");
-						var appearanceSettings = provider.GetRequiredService<IAppearanceSettingsService>();
-						TraceStartup("Services: reading appearance settings");
-						_ = appearanceSettings.AppThemeMode;
-						_ = appearanceSettings.AppThemeBackdropMaterial;
+						else
+						{
+							TraceStartup("Services: resolving appearance settings");
+							var appearanceSettings = provider.GetRequiredService<IAppearanceSettingsService>();
+							TraceStartup("Services: reading appearance settings");
+							_ = appearanceSettings.AppThemeMode;
+							_ = appearanceSettings.AppThemeBackdropMaterial;
+						}
+
+						// Leave Ioc unconfigured until startup service resolution succeeds so the UI-thread fallback can configure it.
+						Ioc.Default.ConfigureServices(provider);
+						TraceStartup("Services: default provider configured");
 						TraceStartup("Services: task completed");
 
 						return provider;
