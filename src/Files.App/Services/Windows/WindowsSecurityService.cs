@@ -17,7 +17,7 @@ namespace Files.App.Services
 		/// <inheritdoc/>
 		public unsafe bool CanDragAndDrop()
 		{
-			return !IsAppElevated();
+			return true;
 		}
 
 		/// <inheritdoc/>

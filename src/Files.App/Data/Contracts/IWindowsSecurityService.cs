@@ -15,19 +15,17 @@ namespace Files.App.Data.Contracts
 		bool IsAppElevated();
 
 		/// <summary>
-		/// Gets a value that indicates whether the application can drag &amp; drop.
+		/// Gets a value that indicates whether drag &amp; drop should be enabled in the application.
 		/// </summary>
 		/// <remarks>
-		/// Drag &amp; drop onto an elevated app is not allowed (just crashes) due to UIPI.
+		/// The application does not disable drag &amp; drop based on its elevation state.
+		/// Windows may still restrict drag &amp; drop between processes at different integrity levels.
 		/// <br/>
 		/// <br/>
-		/// For more info, visit:
-		/// <br/>
-		/// <a href="https://github.com/files-community/Files/issues/12390"/>
-		/// <br/>
-		/// <a href="https://github.com/microsoft/terminal/issues/12017#issuecomment-1004129669"/>
+		/// For more information, see
+		/// <see href="https://github.com/files-community/Files/issues/12390"/>.
 		/// </remarks>
-		/// <returns>Returns true if the application can drag &amp; drop; otherwise, false.</returns>
+		/// <returns>Returns true if drag &amp; drop should be enabled in the application.</returns>
 		bool CanDragAndDrop();
 
 		/// <summary>

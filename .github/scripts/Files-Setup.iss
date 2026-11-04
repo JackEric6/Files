@@ -31,13 +31,13 @@ Name: "chinesesimp"; MessagesFile: "compiler:Languages\Unofficial\ChineseSimplif
 [CustomMessages]
 english.AdditionalOptions=Additional options:
 english.CreateDesktopIcon=Create a desktop shortcut
-english.InvalidPackageLocation=Choose a Windows app package location ending in "WindowsApps", for example C:\Program Files\WindowsApps or D:\WindowsApps.
+english.InvalidPackageLocation=Choose the registered package volume C:\Program Files\WindowsApps or a drive-root volume such as D:\WindowsApps. A new volume cannot be nested under another folder.
 english.InstallationFailed=Files could not be installed. Details were saved to:
 english.InstallingFiles=Installing Files...
 english.ScriptStartFailed=The Files installation could not be started.
 chinesesimp.AdditionalOptions=其他选项:
 chinesesimp.CreateDesktopIcon=创建桌面快捷方式
-chinesesimp.InvalidPackageLocation=安装位置必须以 WindowsApps 结尾，例如 C:\Program Files\WindowsApps 或 D:\WindowsApps。
+chinesesimp.InvalidPackageLocation=请选择已注册的应用包卷（例如 C:\Program Files\WindowsApps、D:\WindowsApps），或磁盘根目录下的新卷（例如 E:\WindowsApps）。新卷不能放在其他文件夹内。
 chinesesimp.InstallationFailed=Files 安装失败。详细信息已保存到：
 chinesesimp.InstallingFiles=正在安装 Files...
 chinesesimp.ScriptStartFailed=无法启动 Files 安装过程。
@@ -58,6 +58,7 @@ Name: "{autodesktop}\Files"; Filename: "{sys}\explorer.exe"; Parameters: "shell:
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   SelectedPath: String;
+  IsSupportedPackageVolume: Boolean;
 begin
   Result := True;
   if CurPageID = wpSelectDir then
@@ -67,10 +68,18 @@ begin
       (SelectedPath[Length(SelectedPath)] = '\') do
       Delete(SelectedPath, Length(SelectedPath), 1);
 
-    if (Length(SelectedPath) < 14) or
-      (SelectedPath[2] <> ':') or
-      (SelectedPath[3] <> '\') or
-      (CompareText(ExtractFileName(SelectedPath), 'WindowsApps') <> 0) then
+    IsSupportedPackageVolume :=
+      CompareText(
+        SelectedPath,
+        ExpandConstant('{autopf}\WindowsApps')) = 0;
+    if Length(SelectedPath) = 14 then
+      IsSupportedPackageVolume :=
+        IsSupportedPackageVolume or
+        ((SelectedPath[2] = ':') and
+          (SelectedPath[3] = '\') and
+          (CompareText(Copy(SelectedPath, 4, Length(SelectedPath)), 'WindowsApps') = 0));
+
+    if not IsSupportedPackageVolume then
     begin
       MsgBox(
         ExpandConstant('{cm:InvalidPackageLocation}'),
