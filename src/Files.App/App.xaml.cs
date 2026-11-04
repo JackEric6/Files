@@ -48,6 +48,27 @@ namespace Files.App
 		public static ILogger Logger { get; private set; } = NullLogger.Instance;
 
 		public static Microsoft.UI.Dispatching.DispatcherQueue? UiDispatcher { get; private set; }
+		private static readonly object StartupTraceLock = new();
+		private static string? _startupTracePath;
+
+		internal static void TraceStartup(string checkpoint)
+		{
+			try
+			{
+				lock (StartupTraceLock)
+				{
+					_startupTracePath ??= System.IO.Path.Combine(
+						ApplicationData.Current.LocalFolder.Path,
+						$"startup-{Environment.ProcessId}.log");
+					System.IO.File.AppendAllText(
+						_startupTracePath,
+						$"{DateTimeOffset.Now:O} {checkpoint}{Environment.NewLine}");
+				}
+			}
+			catch
+			{
+			}
+		}
 
 		/// <summary>
 		/// Initializes an instance of <see cref="App"/>.
@@ -70,47 +91,66 @@ namespace Files.App
 		/// </summary>
 		protected override void OnLaunched(LaunchActivatedEventArgs e)
 		{
+			TraceStartup("OnLaunched: enter");
 			UiDispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+			TraceStartup("OnLaunched: dispatcher ready");
 			_ = ServerSession;
+			TraceStartup("OnLaunched: server session requested");
 
 			// Constructed on the UI thread: the ctor subscribes the UI-thread-only Clipboard.ContentChanged
 			AppModel = new AppModel();
+			TraceStartup("OnLaunched: AppModel created");
 
 			_ = ActivateAsync();
 
 			async Task ActivateAsync()
 			{
+				TraceStartup("ActivateAsync: enter");
 				var startup = Stopwatch.StartNew();
 				var appActivationArguments = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs();
+				TraceStartup($"ActivateAsync: activation arguments read ({appActivationArguments.Data?.GetType().FullName ?? "null"})");
 				var isStartupTask = appActivationArguments.Data is Windows.ApplicationModel.Activation.IStartupTaskActivatedEventArgs;
 
 				// Build the DI container off-thread while the window initializes
 				var appModel = AppModel;
 				var servicesTask = Task.Run(() =>
 				{
+					TraceStartup("Services: task started");
 					try
 					{
+						TraceStartup("Services: ConfigureHost starting");
 						var provider = AppLifecycleHelper.ConfigureHost(appModel);
+						TraceStartup("Services: ConfigureHost completed");
 
 						// Configure Ioc here so Ioc.Default-dependent constructions warm off-thread too
 						Ioc.Default.ConfigureServices(provider);
+						TraceStartup("Services: resolving file tags");
 						_ = provider.GetRequiredService<IFileTagsSettingsService>();
+						TraceStartup("Services: file tags ready");
 
 						// Load the appearance settings needed for the first frame off the UI thread.
 						if (isStartupTask && provider.GetRequiredService<IGeneralSettingsService>().CloseToBackground)
+						{
+							TraceStartup("Services: startup task will close to background");
 							return provider;
+						}
+						TraceStartup("Services: resolving appearance settings");
 						var appearanceSettings = provider.GetRequiredService<IAppearanceSettingsService>();
+						TraceStartup("Services: reading appearance settings");
 						_ = appearanceSettings.AppThemeMode;
 						_ = appearanceSettings.AppThemeBackdropMaterial;
+						TraceStartup("Services: task completed");
 
 						return provider;
 					}
-					catch (Exception)
+					catch (Exception ex)
 					{
+						TraceStartup($"Services: task failed ({ex.GetType().FullName}, HRESULT 0x{ex.HResult:X8})");
 						// A UI-thread-only service ctor failed off-thread; rebuilt on the UI thread below
 						return null;
 					}
 				});
+				TraceStartup("ActivateAsync: services task scheduled");
 
 				// Native AOT opens the main page directly; JIT builds retain the splash screen.
 				var showSplashScreen = System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
@@ -118,25 +158,37 @@ namespace Files.App
 				if (!isStartupTask)
 				{
 					// Construct the window while appearance settings are loaded.
+					TraceStartup("ActivateAsync: constructing MainWindow");
 					_ = MainWindow.Instance;
+					TraceStartup("ActivateAsync: MainWindow constructed");
 				}
 
 				// Configure the DI (dependency injection) container
+				TraceStartup("ActivateAsync: awaiting services task");
 				var serviceProvider = await servicesTask;
+				TraceStartup($"ActivateAsync: services task returned (null={serviceProvider is null})");
 				if (serviceProvider is null)
 				{
+					TraceStartup("ActivateAsync: rebuilding service provider on UI thread");
 					serviceProvider = AppLifecycleHelper.ConfigureHost(appModel);
 					Ioc.Default.ConfigureServices(serviceProvider);
+					TraceStartup("ActivateAsync: service provider rebuilt");
 				}
 
+				TraceStartup("ActivateAsync: resolving user settings");
 				var userSettingsService = Ioc.Default.GetRequiredService<IUserSettingsService>();
+				TraceStartup("ActivateAsync: user settings ready");
 				var serverInitialization = SafetyExtensions.IgnoreExceptions(async () =>
 				{
+					TraceStartup("Server initialization: waiting for session");
 					await ServerSession;
+					TraceStartup("Server initialization: calling AppService.InitializeAsync");
 					await Server.AppService.InitializeAsync();
+					TraceStartup("Server initialization: completed");
 				}, Logger);
 				if (isStartupTask && userSettingsService.GeneralSettingsService.CloseToBackground)
 				{
+					TraceStartup("ActivateAsync: awaiting background-only server initialization");
 					await serverInitialization;
 					StopServerSession();
 					Exit();
@@ -144,7 +196,9 @@ namespace Files.App
 				}
 
 				// WinRT thumbnails can initialize the same Shell cache outside our icon helpers.
+				TraceStartup("ActivateAsync: initializing shell image list");
 				await STATask.RunPooled(WindowsStorableHelpers.InitializeShellImageList, Logger);
+				TraceStartup("ActivateAsync: shell image list initialized");
 
 				if (isStartupTask)
 					Program.RegisterCurrentInstance();
@@ -156,6 +210,7 @@ namespace Files.App
 				LibraryManager = Ioc.Default.GetRequiredService<LibraryManager>();
 				Logger = Ioc.Default.GetRequiredService<ILogger<App>>();
 				AppModel = Ioc.Default.GetRequiredService<AppModel>();
+				TraceStartup("ActivateAsync: application services ready");
 
 				MainWindow.Instance.Closed += Window_Closed;
 				MainWindow.Instance.Activated += Window_Activated;
@@ -167,11 +222,14 @@ namespace Files.App
 				}
 				else
 				{
+					TraceStartup("ActivateAsync: navigating to main page");
 					MainWindow.Instance.ShowMainPage();
 				}
 
+				TraceStartup("ActivateAsync: activating window and waiting for first frame");
 				if (!await MainWindow.Instance.ActivateWithBackdropAsync())
 					return;
+				TraceStartup("ActivateAsync: first frame rendered");
 
 				Logger.LogInformation("Startup: initial content rendered after {Elapsed} ms", startup.ElapsedMilliseconds);
 				_ = serviceProvider.GetRequiredService<ICommandManager>();

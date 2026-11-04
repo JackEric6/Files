@@ -25,6 +25,11 @@ on:
         required: false
         type: string
         default: ''
+      diagnostic_only:
+        description: Build a side-by-side diagnostic package without installer smoke tests
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -218,6 +223,7 @@ jobs:
           }
 
       - name: Install EXE package without Windows App SDK Framework
+        if: ${{ !inputs.diagnostic_only }}
         shell: pwsh
         env:
           APP_VERSION: ${{ steps.metadata.outputs.version }}

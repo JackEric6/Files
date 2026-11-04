@@ -32,7 +32,9 @@ namespace Files.App
 
 		public MainWindow() : base(416, 316)
 		{
+			App.TraceStartup("MainWindow: constructor entered");
 			InitializeComponent();
+			App.TraceStartup("MainWindow: XAML initialized");
 
 			ExtendsContentIntoTitleBar = true;
 			Title = "Files";
@@ -40,6 +42,7 @@ namespace Files.App
 			AppWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
 			AppWindow.TitleBar.ButtonPressedBackgroundColor = Colors.Transparent;
 			AppWindow.TitleBar.ButtonHoverBackgroundColor = Colors.Transparent;
+			App.TraceStartup("MainWindow: constructor completed");
 		}
 
 		private void InitializeWindowIcon()
@@ -53,19 +56,27 @@ namespace Files.App
 
 		internal async Task<bool> ActivateWithBackdropAsync()
 		{
+			App.TraceStartup("Window activation: initializing content");
 			var rootFrame = EnsureWindowIsInitialized();
 			if (rootFrame is null)
+			{
+				App.TraceStartup("Window activation: content initialization returned null");
 				return false;
+			}
 
 			// Submit the initial content and backdrop before the window's normal show animation.
+			App.TraceStartup("Window activation: requesting compositor commit");
 			await CompositionTarget.GetCompositorForCurrentThread().RequestCommitAsync();
+			App.TraceStartup("Window activation: compositor commit completed");
 
 			var firstFrame = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 			CompositionTarget.Rendered += OnRendered;
 			Closed += OnClosed;
 			try
 			{
+				App.TraceStartup("Window activation: calling Activate");
 				Activate();
+				App.TraceStartup("Window activation: Activate returned");
 				// Let the initial content paint before starting the remaining initialization.
 				return await firstFrame.Task;
 			}
@@ -77,6 +88,7 @@ namespace Files.App
 
 			void OnRendered(object? sender, RenderedEventArgs args)
 			{
+				App.TraceStartup($"Window activation: Rendered callback (loaded={rootFrame.IsLoaded})");
 				if (rootFrame.IsLoaded)
 					firstFrame.TrySetResult(true);
 			}
@@ -285,6 +297,7 @@ namespace Files.App
 		[DynamicWindowsRuntimeCast(typeof(Frame))]
 		private Frame? EnsureWindowIsInitialized()
 		{
+			App.TraceStartup("Window initialization: entered");
 			try
 			{
 				// NOTE:
@@ -293,6 +306,7 @@ namespace Files.App
 				if (Instance.Content is not Frame rootFrame)
 				{
 					// Create a Frame to act as the navigation context and navigate to the first page
+					App.TraceStartup("Window initialization: creating Frame");
 					rootFrame = new() { CacheSize = 1 };
 					rootFrame.Loaded += (_, _) =>
 					{
@@ -306,22 +320,29 @@ namespace Files.App
 
 					// Place the frame in the current Window
 					Instance.Content = rootFrame;
+					App.TraceStartup("Window initialization: Frame assigned");
 					Ioc.Default.GetRequiredService<IAppThemeModeService>().SetAppThemeMode(this, callThemeModeChangedEvent: false);
+					App.TraceStartup("Window initialization: theme applied");
 					Ioc.Default.GetRequiredService<IResourcesService>().LoadAppResources(Ioc.Default.GetRequiredService<IAppearanceSettingsService>());
+					App.TraceStartup("Window initialization: app resources loaded");
 				}
 
 				if (SystemBackdrop is null)
 				{
 					// Initialize the active material directly instead of transitioning from its inactive fallback.
+					App.TraceStartup("Window initialization: creating backdrop");
 					var backdrop = new AppSystemBackdrop();
 					backdrop.SetInputActive(true);
 					SystemBackdrop = backdrop;
+					App.TraceStartup("Window initialization: backdrop created");
 				}
 
+				App.TraceStartup("Window initialization: completed");
 				return rootFrame;
 			}
-			catch (COMException)
+			catch (COMException ex)
 			{
+				App.TraceStartup($"Window initialization: COM failure (HRESULT 0x{ex.HResult:X8})");
 				return null;
 			}
 		}
