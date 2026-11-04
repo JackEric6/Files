@@ -96,6 +96,41 @@ try {
         Where-Object { $_.PackageFamilyName -eq "FilesDev_ykqwq8d6ps0ag" } |
         Select-Object -First 1
     if ($existingPackage) {
+        $installerSessionId = (Get-Process -Id $PID).SessionId
+        $installerUserName = $identity.Name
+        Write-Output "Requesting running Files instances in the current session to close before updating."
+        $runningFilesProcesses = @(
+            Get-Process -Name "Files" -IncludeUserName -ErrorAction SilentlyContinue |
+                Where-Object {
+                    $_.SessionId -eq $installerSessionId -and
+                    $_.UserName -eq $installerUserName
+                }
+        )
+        foreach ($process in $runningFilesProcesses) {
+            if ($process.MainWindowHandle -ne [IntPtr]::Zero) {
+                [void]$process.CloseMainWindow()
+            }
+        }
+
+        $closeDeadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            $runningFilesProcesses = @(
+                Get-Process -Name "Files" -IncludeUserName -ErrorAction SilentlyContinue |
+                    Where-Object {
+                        $_.SessionId -eq $installerSessionId -and
+                        $_.UserName -eq $installerUserName
+                    }
+            )
+            if ($runningFilesProcesses.Count -eq 0) {
+                break
+            }
+            Start-Sleep -Milliseconds 500
+        } while ([DateTime]::UtcNow -lt $closeDeadline)
+        if ($runningFilesProcesses.Count -gt 0) {
+            throw "Close Files and retry the installation. The running app did not exit within 30 seconds."
+        }
+        Write-Output "No Files instances are running in the current session."
+
         $existingLocation = [System.IO.Path]::GetFullPath($existingPackage.InstallLocation)
         if (-not $existingLocation.StartsWith(
             "$PackageVolumePath\",

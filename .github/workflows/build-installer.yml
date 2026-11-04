@@ -306,68 +306,149 @@ jobs:
             throw "Files was installed outside the selected WindowsApps volume."
           }
 
-          $desktopDirectories = @(
-            [Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
-            [Environment]::GetFolderPath([System.Environment+SpecialFolder]::CommonDesktopDirectory)
-          ) |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-            Select-Object -Unique
-          $desktopShortcut = $desktopDirectories |
-            ForEach-Object { Join-Path $_ "Files.lnk" } |
-            Where-Object { Test-Path -Path $_ -PathType Leaf } |
-            Select-Object -First 1
-          if (-not $desktopShortcut) {
-            if (Test-Path $setupLogPath) {
-              Get-Content $setupLogPath | Select-String -Pattern "desktop|Files.lnk|Creating icon|Create shortcut"
-            }
-            throw "The installer did not create the requested desktop shortcut."
-          }
-          Write-Output "Verified Files $env:APP_VERSION installation and desktop shortcut at $desktopShortcut on the Windows runner."
-
-          $launchStartedAt = Get-Date
           $appUserModelId = "FilesDev_ykqwq8d6ps0ag!App"
-          Start-Process `
-            -FilePath (Join-Path $env:WINDIR "explorer.exe") `
-            -ArgumentList "shell:AppsFolder\$appUserModelId"
-          $launchDeadline = (Get-Date).AddSeconds(90)
-          $appProcess = $null
-          do {
-            $appProcess = Get-Process -Name "Files" -ErrorAction SilentlyContinue |
-              Where-Object { $_.StartTime -ge $launchStartedAt } |
-              Sort-Object StartTime -Descending |
+          function Get-FilesDesktopShortcut {
+            $desktopDirectories = @(
+              [Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
+              [Environment]::GetFolderPath([System.Environment+SpecialFolder]::CommonDesktopDirectory)
+            ) |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+              Select-Object -Unique
+            $shortcutPath = $desktopDirectories |
+              ForEach-Object { Join-Path $_ "Files.lnk" } |
+              Where-Object { Test-Path -Path $_ -PathType Leaf } |
               Select-Object -First 1
-            if ($appProcess) {
-              $appProcess.Refresh()
-              if ($appProcess.MainWindowHandle -ne [IntPtr]::Zero -and $appProcess.Responding) {
-                break
+            if (-not $shortcutPath) {
+              if (Test-Path $setupLogPath) {
+                Get-Content $setupLogPath |
+                  Select-String -Pattern "desktop|Files.lnk|Creating icon|Create shortcut"
               }
+              throw "The installer did not create the requested desktop shortcut."
             }
-            Start-Sleep -Seconds 1
-          } while ((Get-Date) -lt $launchDeadline)
 
-          if (-not $appProcess -or
-              $appProcess.MainWindowHandle -eq [IntPtr]::Zero -or
-              -not $appProcess.Responding) {
-            Get-WinEvent `
-              -FilterHashtable @{ LogName = "Application"; StartTime = $launchStartedAt } `
-              -ErrorAction SilentlyContinue |
-              Where-Object { $_.Message -match "Files\.exe|FilesDev|WindowsAppRuntime" } |
-              Select-Object -First 15 TimeCreated, Id, ProviderName, Message |
-              Format-List
-            throw "Files did not open a responsive main window within 90 seconds."
+            $shell = New-Object -ComObject WScript.Shell
+            $shortcut = $shell.CreateShortcut($shortcutPath)
+            $expectedTarget = [System.IO.Path]::GetFullPath(
+              (Join-Path $env:WINDIR "explorer.exe")
+            )
+            $actualTarget = [System.IO.Path]::GetFullPath($shortcut.TargetPath)
+            $expectedArguments = "shell:AppsFolder\$appUserModelId"
+            if (-not (Test-Path $actualTarget -PathType Leaf) -or
+                -not [string]::Equals(
+                  $actualTarget,
+                  $expectedTarget,
+                  [System.StringComparison]::OrdinalIgnoreCase
+                ) -or
+                $shortcut.Arguments -ne $expectedArguments) {
+              throw "The desktop shortcut has an invalid target or launch argument: $shortcutPath"
+            }
+            Write-Host "Verified desktop shortcut target and arguments at $shortcutPath."
+            return $shortcut
           }
 
-          $appProcessId = $appProcess.Id
-          Start-Sleep -Seconds 10
-          $appProcess = Get-Process -Id $appProcessId -ErrorAction SilentlyContinue
-          if (-not $appProcess) {
-            throw "Files exited within 10 seconds of launch."
+          function Test-FilesShortcutLaunch {
+            param(
+              [Parameter(Mandatory = $true)]
+              [object]$Shortcut,
+              [Parameter(Mandatory = $true)]
+              [string]$Phase
+            )
+
+            $launchStartedAt = Get-Date
+            Start-Process `
+              -FilePath $Shortcut.TargetPath `
+              -ArgumentList $Shortcut.Arguments
+            $launchDeadline = (Get-Date).AddSeconds(90)
+            $appProcess = $null
+            do {
+              $appProcess = Get-Process -Name "Files" -ErrorAction SilentlyContinue |
+                Where-Object { $_.StartTime -ge $launchStartedAt } |
+                Sort-Object StartTime -Descending |
+                Select-Object -First 1
+              if ($appProcess) {
+                $appProcess.Refresh()
+                if ($appProcess.MainWindowHandle -ne [IntPtr]::Zero -and $appProcess.Responding) {
+                  break
+                }
+              }
+              Start-Sleep -Seconds 1
+            } while ((Get-Date) -lt $launchDeadline)
+
+            if (-not $appProcess -or
+                $appProcess.MainWindowHandle -eq [IntPtr]::Zero -or
+                -not $appProcess.Responding) {
+              Get-WinEvent `
+                -FilterHashtable @{ LogName = "Application"; StartTime = $launchStartedAt } `
+                -ErrorAction SilentlyContinue |
+                Where-Object { $_.Message -match "Files\.exe|FilesDev|WindowsAppRuntime" } |
+                Select-Object -First 15 TimeCreated, Id, ProviderName, Message |
+                Format-List
+              throw "Files did not open a responsive main window after $Phase within 90 seconds."
+            }
+
+            $appProcessId = $appProcess.Id
+            Start-Sleep -Seconds 10
+            $appProcess = Get-Process -Id $appProcessId -ErrorAction SilentlyContinue
+            if (-not $appProcess) {
+              throw "Files exited within 10 seconds after $Phase."
+            }
+            $appProcess.Refresh()
+            if ($appProcess.MainWindowHandle -eq [IntPtr]::Zero -or -not $appProcess.Responding) {
+              throw "Files stopped responding within 10 seconds after $Phase."
+            }
+            Write-Host "Verified Files stayed responsive for 10 seconds after $Phase."
+            return $appProcess
           }
-          $appProcess.Refresh()
-          if ($appProcess.MainWindowHandle -eq [IntPtr]::Zero -or -not $appProcess.Responding) {
-            throw "Files stopped responding within 10 seconds of launch."
+
+          Write-Output "Verified Files $env:APP_VERSION installation on the Windows runner."
+          $desktopShortcut = Get-FilesDesktopShortcut
+          $appProcess = Test-FilesShortcutLaunch `
+            -Shortcut $desktopShortcut `
+            -Phase "the desktop shortcut launch"
+
+          Write-Output "Testing an over-install while Files is running."
+          $overlaySetupLogPath = Join-Path $env:TEMP "FilesSetup-$($env:APP_VERSION)-overlay.log"
+          $overlayArguments = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/SP-",
+            '/DIR="C:\Program Files\WindowsApps"',
+            "/TASKS=desktopicon",
+            "/LOG=$overlaySetupLogPath"
+          )
+          $overlayProcess = Start-Process `
+            -FilePath $setup `
+            -ArgumentList $overlayArguments `
+            -Wait `
+            -PassThru
+          if ($overlayProcess.ExitCode -ne 0) {
+            if (Test-Path $logPath) {
+              Get-Content $logPath
+            }
+            if (Test-Path $overlaySetupLogPath) {
+              Get-Content $overlaySetupLogPath | Select-Object -Last 80
+            }
+            throw "The EXE installer could not over-install the running Files package (exit code $($overlayProcess.ExitCode))."
           }
-          Write-Output "Verified Files $env:APP_VERSION opened a responsive main window and stayed responsive for 10 seconds."
+
+          $installedPackage = Get-AppxPackage -Name "FilesDev" |
+            Where-Object { $_.PackageFamilyName -eq "FilesDev_ykqwq8d6ps0ag" } |
+            Select-Object -First 1
+          if (-not $installedPackage -or
+              $installedPackage.Status -ne "Ok" -or
+              $installedPackage.Version.ToString() -ne $env:APP_VERSION) {
+            if (Test-Path $logPath) {
+              Get-Content $logPath
+            }
+            throw "The over-install completed without preserving the expected Files package registration."
+          }
+          Write-Output "Verified the installer updated an existing Files installation."
+          $desktopShortcut = Get-FilesDesktopShortcut
+          $null = Test-FilesShortcutLaunch `
+            -Shortcut $desktopShortcut `
+            -Phase "the post-over-install desktop shortcut launch"
+          Write-Output "Verified Files $env:APP_VERSION can be installed over an existing installation and launched."
 
       - name: Upload install package artifact
         uses: actions/upload-artifact@v7
@@ -416,7 +497,9 @@ jobs:
             '- 保留 MSIX 应用身份，继续支持 Files 的 Windows 文件关联、协议和 Shell 集成。' \
             '- 改进安装结束阶段：显示部署状态，部署超时或失败时明确报错并保留诊断日志。' \
             '- 安装完成页提供启动选项；通过原始用户上下文启动 Files，避免继承安装器管理员权限。' \
-            '- 发布门槛增加无 Windows App SDK Framework 的 Windows Actions 临时环境安装、桌面快捷方式、启动及持续响应检查。' \
+            '- 修复安装完成启动项和桌面快捷方式的 Explorer 路径；启动目标改为 Windows 目录下的 explorer.exe。' \
+            '- 支持覆盖安装：更新前尝试正常关闭 Files；30 秒未退出时提示关闭应用后重试，不强制结束进程。' \
+            '- 发布门槛增加无 Windows App SDK Framework 的 Windows Actions 临时环境安装、快捷方式目标检查、运行中覆盖安装、更新后启动及持续响应检查。' \
             '' \
             '### 安装' \
             '- 推荐下载 Setup.exe，以管理员身份运行；可选择 WindowsApps 包卷并勾选桌面快捷方式。' \

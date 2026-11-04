@@ -53,10 +53,10 @@ Source: "{#ArtifactsDir}\Install-Files.ps1"; DestDir: "{tmp}\FilesInstaller"; Fl
 Source: "{#ArtifactsDir}\FilesApp_SelfSigned.cer"; DestDir: "{tmp}\FilesInstaller"; Flags: ignoreversion deleteafterinstall; AfterInstall: InstallFilesPackage
 
 [Icons]
-Name: "{autodesktop}\Files"; Filename: "{sys}\explorer.exe"; Parameters: "shell:AppsFolder\FilesDev_ykqwq8d6ps0ag!App"; AppUserModelID: "FilesDev_ykqwq8d6ps0ag!App"; Tasks: desktopicon
+Name: "{autodesktop}\Files"; Filename: "{win}\explorer.exe"; Parameters: "shell:AppsFolder\FilesDev_ykqwq8d6ps0ag!App"; AppUserModelID: "FilesDev_ykqwq8d6ps0ag!App"; Tasks: desktopicon
 
 [Run]
-Filename: "{sys}\explorer.exe"; Parameters: "shell:AppsFolder\FilesDev_ykqwq8d6ps0ag!App"; Description: "{cm:LaunchFiles}"; Flags: postinstall nowait skipifsilent runasoriginaluser
+Filename: "{win}\explorer.exe"; Parameters: "shell:AppsFolder\FilesDev_ykqwq8d6ps0ag!App"; Description: "{cm:LaunchFiles}"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [Code]
 function NextButtonClick(CurPageID: Integer): Boolean;
